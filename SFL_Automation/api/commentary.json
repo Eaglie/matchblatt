@@ -1,0 +1,173 @@
+{
+  "commentary": {
+    "messages": [
+      {
+        "message": [
+          {
+            "type": "commentary",
+            "eventProviderId": "1i6sy302pbkoa02celdz0mvpw",
+            "commentaryType": "text",
+            "comment": "<p><strong>ABWESENDE SPIELER</strong></p><p><strong>FC Thun</strong></p><p>Gesperrt: Bürki</p><p>Verletzt: ...</p><p>Fraglich: ...</p><p>&nbsp;</p><p>Von einer Sperre bedroht: -</p><p>&nbsp;</p><p><strong>BSC Young Boys</strong></p><p>Gesperrt: -</p><p>Verletzt: ...</p><p>Fraglich: ...</p><p>&nbsp;</p><p>Von einer Sperre bedroht: -</p><p>&nbsp;</p><p>*****************************</p><p>&nbsp;</p><p><strong>INFOS / STATS</strong></p><ul><li><p>Der FC Thun gewann zwei seiner letzten drei BSL-Duelle gegen die Young Boys – genauso viele wie in den zwölf Begegnungen davor. Im jüngsten Aufeinandertreffen kassierten die Berner Oberländer allerdings mit dem 3:8 ihre geteilt höchste BSL-Niederlage und erstmals acht Gegentore in einem Super-League-Spiel.</p></li><li><p>Nach fünf BSL-Spielen ohne Sieg zum Abschluss der vergangenen Saison feierte der FC Thun mit dem Erfolg am ersten Spieltag wieder einen Vollerfolg. Nun könnten die Berner Oberländer zum fünften Mal mit zwei Siegen in eine Super-League-Saison starten. In zwei Spielzeiten in Folge gelang dies bisher nur 2004/05 und 2005/06 – nach dem Auftakt mit zwei Siegen in der Saison 2025/26 ist dies nun erneut möglich.</p></li><li><p>Die Young Boys sind aktuell seit vier BSL-Spielen ungeschlagen (3 Siege, 1 Unentschieden) und stellen damit gemeinsam mit dem FC St. Gallen die längste laufende Serie der Liga. Unter Gerardo Seoane könnten die Berner nun erstmals fünf Super-League-Spiele in Folge ungeschlagen bleiben.</p></li><li><p>Der FC Thun verlor das erste Heimspiel einer Super-League-Saison nur in zwei seiner bisherigen 16 Spielzeiten – 2015/16 mit 3:5 gegen den Grasshopper Club Zürich und 2017/18 mit 0:1 gegen den FC Sion. Die Young Boys verloren ihr erstes Auswärtsspiel einer BSL-Saison ebenfalls nur zweimal in den bisherigen 23 Spielzeiten – 2008/09 mit 1:2 beim FC Sion und 2024/25 mit 1:3 bei Servette.</p></li><li><p>Die Young Boys haben keines ihrer letzten 16 BSL-Auswärtsspiele beim amtierenden Meister gewonnen. Der letzte Erfolg datiert vom Mai 2012 mit einem 2:1 beim FC Basel. Diese Serie ist die längste aktuelle der Super League und zugleich Vereinsnegativrekord.</p></li><li><p>Mit den Young Boys (vier Tore) und dem FC Thun (drei Tore) treffen die beiden treffsichersten Offensiven dieser noch jungen Super-League-Saison aufeinander. Bereits in der vergangenen BSL-Saison stellten beide Teams mit je 80 Treffern die erfolgreichsten Angriffsreihen der Liga. Beide Mannschaften erzielten in dieser Saison bereits drei Tore nach Standardsituationen. In der vergangenen Spielzeit hatten die Young Boys anteilsmässig noch die wenigsten Standardtore der Liga erzielt (25 Prozent bzw. 20 von 80 Toren).</p></li><li><p>Nur der FC St. Gallen (298) spielte am ersten Spieltag der Super-League-Saison 2026/27 weniger Pässe als die Young Boys (326) und der FC Thun (334). Die Berner verzeichneten zudem den tiefsten Ballbesitzanteil (41,6 Prozent), Thun den vierttiefsten (45,9 Prozent).</p></li><li><p>Kastriot Imeri von den Young Boys, der in der vergangenen BSL-Saison an den FC Thun ausgeliehen war (30 BSL-Spiele, 6 Tore, 8 Assists), war der einzige Spieler, der am ersten Spieltag der Saison 2026/27 zwei Assists verbuchte. Nun könnte er erstmals in drei Super-League-Einsätzen in Folge mindestens eine Torvorlage liefern.</p></li><li><p>Mit seinem Doppelpack am ersten Spieltag der Super-League-Saison 2026/27 erzielte Samuel Essende von den Young Boys sechs Tore in seinen letzten drei BSL-Spielen. Darunter fällt auch sein Hattrick beim 8:3 gegen den FC Thun in der 37. Runde der vergangenen Saison. Seit Beginn der 37. Runde der Vorsaison sind seine sechs Treffer Ligahöchstwert – dahinter folgt Oscar Kabwit mit drei Toren.</p></li><li><p>Nicolas Bürgy vom FC Thun erzielte am ersten Spieltag seinen ersten Doppelpack in der Super League. Damit traf er genauso oft wie in seinen 63 vorherigen BSL-Spielen zusammen – darunter 31 Einsätze für die Young Boys, für die ihm ebenfalls ein Tor gelang. Gemeinsam mit Samuel Essende von den Young Boys führt Bürgy aktuell die BSL-Torschützenliste an.</p></li></ul>",
+            "timestamp": "2026-07-13T09:17:05.505Z",
+            "lastModified": "2026-07-30T10:33:19.270Z",
+            "time": "",
+            "contestantId": ""
+          }
+        ]
+      }
+    ]
+  },
+  "fixturesAndResults": {
+    "match": [
+      {
+        "matchInfo": {
+          "id": "1i6sy302pbkoa02celdz0mvpw",
+          "coverageLevel": "13",
+          "date": "2026-08-01Z",
+          "time": "18:30:00Z",
+          "localDate": "2026-08-01",
+          "localTime": "20:30:00",
+          "week": "2",
+          "numberOfPeriods": 2,
+          "periodLength": 45,
+          "var": "1",
+          "lastUpdated": "2026-07-31T00:47:17Z",
+          "description": "Thun vs Young Boys",
+          "sport": {
+            "id": "289u5typ3vp4ifwh5thalohmq",
+            "name": "Soccer"
+          },
+          "ruleset": {
+            "id": "79plas4983031idr6vw83nuel",
+            "name": "Men"
+          },
+          "competition": {
+            "id": "e0lck99w8meo9qoalfrxgo33o",
+            "name": "Super League",
+            "knownName": "Brack Super League",
+            "sponsorName": "Brack Super League",
+            "competitionCode": "SUL",
+            "competitionFormat": "Domestic league",
+            "country": {
+              "id": "3bh70jgvc5mn58x0byjkuda17",
+              "name": "Schweiz"
+            }
+          },
+          "tournamentCalendar": {
+            "id": "cx0b7yl7kqmgay9wn2c3zyjh0",
+            "startDate": "2026-07-25Z",
+            "endDate": "2027-05-17Z",
+            "name": "2026/2027",
+            "includesStandings": "yes",
+            "active": "yes"
+          },
+          "stage": {
+            "id": "cy3cuo3r8ejq1f7r6tx1zumtw",
+            "formatId": "e2q01r9o9jwiq1fls93d1sslx",
+            "startDate": "2026-07-25Z",
+            "endDate": "2027-04-18Z",
+            "name": "Reguläre Saison"
+          },
+          "contestant": [
+            {
+              "id": "6u0uaryouca843tojxzgwulr2",
+              "name": "Thun",
+              "shortName": "Thun",
+              "officialName": "FC Thun",
+              "code": "THU",
+              "position": "home",
+              "optaShortName": "Thun",
+              "optaOfficialName": "FC Thun",
+              "optaSymId": "THU",
+              "country": {
+                "id": "3bh70jgvc5mn58x0byjkuda17",
+                "name": "Schweiz"
+              }
+            },
+            {
+              "id": "5fd9f9bti2cdgb6r1lf8l2bc7",
+              "name": "Young Boys",
+              "shortName": "Young Boys",
+              "officialName": "BSC Young Boys",
+              "code": "YB",
+              "position": "away",
+              "optaShortName": "Young Boys",
+              "optaOfficialName": "BSC Young Boys",
+              "optaSymId": "YB",
+              "country": {
+                "id": "3bh70jgvc5mn58x0byjkuda17",
+                "name": "Schweiz"
+              }
+            }
+          ],
+          "venue": {
+            "id": "btd1mta4c1ajcdagiovi4f5a",
+            "neutral": "no",
+            "longName": "VISANA STADION",
+            "shortName": "VISANA STADION",
+            "latitude": "46.744588109",
+            "longitude": "7.606626745"
+          }
+        },
+        "liveData": {
+          "matchDetails": {
+            "periodId": 16,
+            "matchStatus": "Fixture"
+          },
+          "matchDetailsExtra": {
+            "matchOfficial": [
+              {
+                "id": "9je2yzrq707a2np2dwmth7dg5",
+                "type": "Main",
+                "firstName": "Urs",
+                "lastName": "Schnyder",
+                "shortFirstName": "Urs",
+                "shortLastName": "Schnyder"
+              },
+              {
+                "id": "ao0xn0pizsz4ztieltw8hnmxh",
+                "type": "Assistant referee 1",
+                "firstName": "Benjamin",
+                "lastName": "Zürcher",
+                "shortFirstName": "Benjamin",
+                "shortLastName": "Zürcher"
+              },
+              {
+                "id": "ckl848vinnx8gbe4afej9becq",
+                "type": "Assistant referee 2",
+                "firstName": "David",
+                "lastName": "Huwiler",
+                "shortFirstName": "David",
+                "shortLastName": "Huwiler"
+              },
+              {
+                "id": "tdm2hz85ypfug4071ip1rgq2",
+                "type": "Fourth official",
+                "firstName": "Laura",
+                "lastName": "Mauricio",
+                "shortFirstName": "Laura",
+                "shortLastName": "Mauricio"
+              },
+              {
+                "id": "7ha0428h7lgrctpcikaykgfzd",
+                "type": "Video Assistant Referee",
+                "firstName": "Mirel",
+                "lastName": "Turkes",
+                "shortFirstName": "Mirel",
+                "shortLastName": "Turkes"
+              },
+              {
+                "id": "73e7zuhc6d5f7kgj0pi6apno4",
+                "type": "Assistant VAR Official",
+                "firstName": "Hüseyin",
+                "lastName": "Sanli",
+                "shortFirstName": "Hüseyin",
+                "shortLastName": "Sanli"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

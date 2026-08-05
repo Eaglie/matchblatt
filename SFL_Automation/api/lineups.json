@@ -1,0 +1,171 @@
+{
+  "fixturesAndResults": {
+    "match": [
+      {
+        "matchInfo": {
+          "id": "1i6sy302pbkoa02celdz0mvpw",
+          "coverageLevel": "13",
+          "date": "2026-08-01Z",
+          "time": "18:30:00Z",
+          "localDate": "2026-08-01",
+          "localTime": "20:30:00",
+          "week": "2",
+          "numberOfPeriods": 2,
+          "periodLength": 45,
+          "var": "1",
+          "lastUpdated": "2026-07-31T00:47:17Z",
+          "description": "Thun vs Young Boys",
+          "sport": {
+            "id": "289u5typ3vp4ifwh5thalohmq",
+            "name": "Soccer"
+          },
+          "ruleset": {
+            "id": "79plas4983031idr6vw83nuel",
+            "name": "Men"
+          },
+          "competition": {
+            "id": "e0lck99w8meo9qoalfrxgo33o",
+            "name": "Super League",
+            "knownName": "Brack Super League",
+            "sponsorName": "Brack Super League",
+            "competitionCode": "SUL",
+            "competitionFormat": "Domestic league",
+            "country": {
+              "id": "3bh70jgvc5mn58x0byjkuda17",
+              "name": "Schweiz"
+            }
+          },
+          "tournamentCalendar": {
+            "id": "cx0b7yl7kqmgay9wn2c3zyjh0",
+            "startDate": "2026-07-25Z",
+            "endDate": "2027-05-17Z",
+            "name": "2026/2027",
+            "includesStandings": "yes",
+            "active": "yes"
+          },
+          "stage": {
+            "id": "cy3cuo3r8ejq1f7r6tx1zumtw",
+            "formatId": "e2q01r9o9jwiq1fls93d1sslx",
+            "startDate": "2026-07-25Z",
+            "endDate": "2027-04-18Z",
+            "name": "Reguläre Saison"
+          },
+          "contestant": [
+            {
+              "id": "6u0uaryouca843tojxzgwulr2",
+              "name": "Thun",
+              "shortName": "Thun",
+              "officialName": "FC Thun",
+              "code": "THU",
+              "position": "home",
+              "optaShortName": "Thun",
+              "optaOfficialName": "FC Thun",
+              "optaSymId": "THU",
+              "country": {
+                "id": "3bh70jgvc5mn58x0byjkuda17",
+                "name": "Schweiz"
+              },
+              "homeColor": {
+                "color": "rgba(215, 9, 17, 1)",
+                "text": "light"
+              },
+              "awayColor": {
+                "color": "rgba(215, 9, 17, 1)",
+                "text": "light"
+              }
+            },
+            {
+              "id": "5fd9f9bti2cdgb6r1lf8l2bc7",
+              "name": "Young Boys",
+              "shortName": "Young Boys",
+              "officialName": "BSC Young Boys",
+              "code": "YB",
+              "position": "away",
+              "optaShortName": "Young Boys",
+              "optaOfficialName": "BSC Young Boys",
+              "optaSymId": "YB",
+              "country": {
+                "id": "3bh70jgvc5mn58x0byjkuda17",
+                "name": "Schweiz"
+              },
+              "homeColor": {
+                "color": "rgba(255, 207, 0, 1)",
+                "text": "dark"
+              },
+              "awayColor": {
+                "color": "rgba(255, 207, 0, 1)",
+                "text": "dark"
+              }
+            }
+          ],
+          "venue": {
+            "id": "btd1mta4c1ajcdagiovi4f5a",
+            "neutral": "no",
+            "longName": "VISANA STADION",
+            "shortName": "VISANA STADION",
+            "latitude": "46.744588109",
+            "longitude": "7.606626745"
+          }
+        },
+        "liveData": {
+          "matchDetails": {
+            "periodId": 16,
+            "matchStatus": "Fixture"
+          },
+          "matchDetailsExtra": {
+            "matchOfficial": [
+              {
+                "id": "9je2yzrq707a2np2dwmth7dg5",
+                "type": "Main",
+                "firstName": "Urs",
+                "lastName": "Schnyder",
+                "shortFirstName": "Urs",
+                "shortLastName": "Schnyder"
+              },
+              {
+                "id": "ao0xn0pizsz4ztieltw8hnmxh",
+                "type": "Assistant referee 1",
+                "firstName": "Benjamin",
+                "lastName": "Zürcher",
+                "shortFirstName": "Benjamin",
+                "shortLastName": "Zürcher"
+              },
+              {
+                "id": "ckl848vinnx8gbe4afej9becq",
+                "type": "Assistant referee 2",
+                "firstName": "David",
+                "lastName": "Huwiler",
+                "shortFirstName": "David",
+                "shortLastName": "Huwiler"
+              },
+              {
+                "id": "tdm2hz85ypfug4071ip1rgq2",
+                "type": "Fourth official",
+                "firstName": "Laura",
+                "lastName": "Mauricio",
+                "shortFirstName": "Laura",
+                "shortLastName": "Mauricio"
+              },
+              {
+                "id": "7ha0428h7lgrctpcikaykgfzd",
+                "type": "Video Assistant Referee",
+                "firstName": "Mirel",
+                "lastName": "Turkes",
+                "shortFirstName": "Mirel",
+                "shortLastName": "Turkes"
+              },
+              {
+                "id": "73e7zuhc6d5f7kgj0pi6apno4",
+                "type": "Assistant VAR Official",
+                "firstName": "Hüseyin",
+                "lastName": "Sanli",
+                "shortFirstName": "Hüseyin",
+                "shortLastName": "Sanli"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
