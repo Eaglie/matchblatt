@@ -5,13 +5,25 @@ import re
 
 def lade_transfermarkt(url, teamname=""):
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(3000)
-        html = page.content()
-        browser.close()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(3000)
+            html = page.content()
+            browser.close()
+
+    except Exception as e:
+        raise Exception(str(e))
 
     soup = BeautifulSoup(html, "html.parser")
 
