@@ -1,23 +1,31 @@
 import streamlit as st
-from playwright.sync_api import sync_playwright
 
-st.set_page_config(page_title="Playwright Test")
+from sfl import lade_sfl
+from transfermarkt import lade_transfermarkt
+from report import erstelle_report
 
-st.title("Playwright Test")
+st.set_page_config(page_title="Matchblatt", layout="wide")
 
-if st.button("Browser starten"):
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
-            st.success("✅ Chromium gestartet!")
-            browser.close()
+st.title("MATCHBLATT")
 
-    except Exception as e:
-        st.exception(e)
+sfl_url = st.text_input("SFL Matchcenter URL")
+heim_url = st.text_input("Transfermarkt Heim")
+gast_url = st.text_input("Transfermarkt Gast")
+
+if st.button("MATCHBLATT ERSTELLEN"):
+
+    st.write("Lade SFL...")
+    sfl = lade_sfl(sfl_url)
+
+    st.write("Lade Heim...")
+    heim = lade_transfermarkt(heim_url, sfl["heim"])
+
+    st.write("Lade Gast...")
+    gast = lade_transfermarkt(gast_url, sfl["gast"])
+
+    heim["letzter_gegner"] = sfl["gast"]
+    gast["letzter_gegner"] = sfl["heim"]
+
+    erstelle_report(sfl, gast, heim)
+
+    st.success("Matchblatt erstellt!")
