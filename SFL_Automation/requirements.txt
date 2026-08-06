@@ -1,5 +1,5 @@
 streamlit
-playwright==1.49.0
+playwright
 requests
 beautifulsoup4
 lxml
