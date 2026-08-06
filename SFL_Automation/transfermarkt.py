@@ -1,6 +1,7 @@
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
+import traceback
 
 
 def lade_transfermarkt(url, teamname=""):
@@ -15,15 +16,14 @@ def lade_transfermarkt(url, teamname=""):
                     "--disable-dev-shm-usage",
                 ],
             )
-
             page = browser.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(3000)
             html = page.content()
             browser.close()
 
-    except Exception as e:
-        raise Exception(str(e))
+    except Exception:
+        raise Exception(traceback.format_exc())
 
     soup = BeautifulSoup(html, "html.parser")
 
