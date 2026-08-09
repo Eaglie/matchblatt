@@ -78,26 +78,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
         st.success("✅ Matchblatt erfolgreich erstellt.")
 
-        st.markdown(
-            """
-            <a
-                href="/app/static/report.html"
-                target="_blank"
-                style="
-                    display:inline-block;
-                    padding:12px 20px;
-                    background:#ffffff;
-                    border:1px solid #999;
-                    border-radius:6px;
-                    text-decoration:none;
-                    color:#222;
-                    font-weight:600;
-                "
-            >
-                MATCHBLATT ÖFFNEN
-            </a>
-            """,
-            unsafe_allow_html=True
+        st.link_button(
+            "MATCHBLATT ÖFFNEN",
+            "/app/static/report.html"
         )
 
     except Exception as e:
