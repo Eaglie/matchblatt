@@ -1,4 +1,5 @@
 import streamlit as st
+import base64
 from pathlib import Path
 
 from sfl import lade_sfl
@@ -13,9 +14,9 @@ st.set_page_config(
 
 st.title("MATCHBLATT")
 
+
 sfl_url = st.text_input(
-    "SFL Matchcenter URL",
-    value="https://sfl.ch/de/match-center/1ljl51o6tne2kfcjop1qutes4"
+    "SFL Matchcenter URL"
 )
 
 heim_url = st.text_input(
@@ -60,6 +61,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 sfl["gast"]
             )
 
+        heim["letzter_gegner"] = heim.get("letzter_gegner", "")
+        gast["letzter_gegner"] = gast.get("letzter_gegner", "")
+
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
                 sfl,
@@ -74,23 +78,44 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nach der Erstellung nicht gefunden."
             )
 
-        static_dir = Path("static")
-        static_dir.mkdir(exist_ok=True)
-
-        static_report = static_dir / "report.html"
-
-        static_report.write_text(
-            report_path.read_text(encoding="utf-8"),
+        html = report_path.read_text(
             encoding="utf-8"
         )
 
-        st.success("✅ Matchblatt erfolgreich erstellt.")
+        encoded = base64.b64encode(
+            html.encode("utf-8")
+        ).decode("ascii")
 
-        st.link_button(
-            "MATCHBLATT ÖFFNEN",
-            "/app/static/report.html"
+        st.success(
+            "✅ Matchblatt erfolgreich erstellt."
+        )
+
+        st.markdown(
+            f"""
+            <a
+                href="data:text/html;base64,{encoded}"
+                target="_blank"
+                style="
+                    display:inline-block;
+                    padding:12px 20px;
+                    background:#ffffff;
+                    border:1px solid #999;
+                    border-radius:6px;
+                    text-decoration:none;
+                    color:#222;
+                    font-weight:600;
+                "
+            >
+                MATCHBLATT ÖFFNEN
+            </a>
+            """,
+            unsafe_allow_html=True
         )
 
     except Exception as e:
-        st.error("❌ Fehler beim Erstellen des Matchblatts.")
+
+        st.error(
+            "❌ Fehler beim Erstellen des Matchblatts."
+        )
+
         st.exception(e)
