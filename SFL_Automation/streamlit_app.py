@@ -15,18 +15,17 @@ st.set_page_config(
 st.title("MATCHBLATT")
 
 
+# Eingabemaske – bewusst komplett leer
 sfl_url = st.text_input(
     "SFL Matchcenter URL"
 )
 
 heim_url = st.text_input(
-    "Transfermarkt Heim",
-    value="https://www.transfermarkt.de/spielbericht/index/spielbericht/4973730"
+    "Transfermarkt Heim"
 )
 
 gast_url = st.text_input(
-    "Transfermarkt Gast",
-    value="https://www.transfermarkt.de/spielbericht/index/spielbericht/4897298"
+    "Transfermarkt Gast"
 )
 
 
@@ -60,9 +59,6 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 gast_url,
                 sfl["gast"]
             )
-
-        heim["letzter_gegner"] = heim.get("letzter_gegner", "")
-        gast["letzter_gegner"] = gast.get("letzter_gegner", "")
 
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
