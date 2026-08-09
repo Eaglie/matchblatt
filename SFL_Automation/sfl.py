@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 ACCOUNT_KEY = "Os-hXumIK"
 
 HEADERS = {
+    "Accept": "*/*",
+    "Accept-Language": "de",
     "Origin": "https://sfl.ch",
     "Referer": "https://sfl.ch/",
     "User-Agent": "Mozilla/5.0",
@@ -15,7 +17,16 @@ HEADERS = {
 }
 
 
-def _hole_header(opta_id):
+def hole_offizielle(opta_id):
+    """
+    Holt die offiziellen Spieloffiziellen direkt aus dem
+    SFL/Origins-Matchcenter.
+
+    Wir übernehmen bewusst nur:
+    - Schiedsrichter
+    - VAR
+    """
+
     url = (
         "https://origins-widgets-orchestrator.origins-digital.com"
         f"/api/header?fixtureId={opta_id}"
@@ -29,179 +40,41 @@ def _hole_header(opta_id):
 
     response.raise_for_status()
 
-    return response.json()
+    data = response.json()
 
+    offizielle = (
+        data
+        .get("liveData", {})
+        .get("matchDetailsExtra", {})
+        .get("matchOfficial", [])
+    )
 
-def _name_aus_objekt(obj):
-    if not isinstance(obj, dict):
-        return ""
+    schiedsrichter = ""
+    var = ""
 
-    # Häufige Varianten
-    for key in (
-        "name",
-        "displayName",
-        "fullName",
-        "personName",
-        "officialName",
-    ):
-        wert = obj.get(key)
-        if isinstance(wert, str) and wert.strip():
-            return wert.strip()
+    for person in offizielle:
 
-    # Verschachtelte Person
-    for key in (
-        "person",
-        "official",
-        "individual",
-        "player",
-    ):
-        wert = obj.get(key)
-        if isinstance(wert, dict):
-            name = _name_aus_objekt(wert)
-            if name:
-                return name
+        typ = person.get("type", "")
 
-    return ""
+        vorname = (
+            person.get("firstName", "")
+            or person.get("shortFirstName", "")
+        )
 
+        nachname = (
+            person.get("lastName", "")
+            or person.get("shortLastName", "")
+        )
 
-def _rolle_text(obj):
-    if not isinstance(obj, dict):
-        return ""
+        name = f"{vorname} {nachname}".strip()
 
-    teile = []
+        if typ == "Main":
+            schiedsrichter = name
 
-    for key in (
-        "role",
-        "type",
-        "position",
-        "function",
-        "officialType",
-        "officialRole",
-        "designation",
-        "title",
-        "label",
-    ):
-        wert = obj.get(key)
+        elif typ == "Video Assistant Referee":
+            var = name
 
-        if isinstance(wert, str):
-            teile.append(wert)
-
-        elif isinstance(wert, dict):
-            for subkey in ("name", "label", "title", "value"):
-                subwert = wert.get(subkey)
-                if isinstance(subwert, str):
-                    teile.append(subwert)
-
-    return " ".join(teile).lower()
-
-
-def _alle_objekte(obj):
-    """
-    Durchsucht die komplette Header-Response rekursiv.
-    Dadurch ist der Parser nicht von einer einzigen JSON-Verschachtelung
-    abhängig.
-    """
-
-    if isinstance(obj, dict):
-
-        yield obj
-
-        for wert in obj.values():
-            yield from _alle_objekte(wert)
-
-    elif isinstance(obj, list):
-
-        for wert in obj:
-            yield from _alle_objekte(wert)
-
-
-def _extrahiere_offizielle(header):
-    result = {
-        "schiedsrichter": "",
-        "assistent1": "",
-        "assistent2": "",
-        "vierter_offizieller": "",
-        "var": "",
-        "avar": "",
-    }
-
-    assistenten = []
-
-    for obj in _alle_objekte(header):
-
-        name = _name_aus_objekt(obj)
-        rolle = _rolle_text(obj)
-
-        if not name:
-            continue
-
-        # SCHIEDSRICHTER
-        if (
-            "referee" in rolle
-            or "schiedsrichter" in rolle
-            or rolle.strip() == "sr"
-        ):
-
-            if (
-                "assistant" not in rolle
-                and "assistent" not in rolle
-                and "var" not in rolle
-                and "avar" not in rolle
-            ):
-                if not result["schiedsrichter"]:
-                    result["schiedsrichter"] = name
-                continue
-
-        # VAR
-        if (
-            re.search(r"\bvar\b", rolle)
-            or "video assistant referee" in rolle
-            or "video-schiedsrichter" in rolle
-        ):
-            if "avar" not in rolle and not result["var"]:
-                result["var"] = name
-            continue
-
-        # AVAR
-        if (
-            "avar" in rolle
-            or "assistant video assistant" in rolle
-            or "video assistant referee assistant" in rolle
-        ):
-            if not result["avar"]:
-                result["avar"] = name
-            continue
-
-        # 4. OFFIZIELLER
-        if (
-            "fourth" in rolle
-            or "4th" in rolle
-            or "4." in rolle
-            or "vierter" in rolle
-            or "4ème" in rolle
-        ):
-            if not result["vierter_offizieller"]:
-                result["vierter_offizieller"] = name
-            continue
-
-        # ASSISTENT
-        if (
-            "assistant referee" in rolle
-            or "assistant" in rolle
-            or "assistent" in rolle
-            or "linesman" in rolle
-            or "assistant referee" in rolle
-        ):
-            if name not in assistenten:
-                assistenten.append(name)
-
-    if assistenten:
-        result["assistent1"] = assistenten[0]
-
-    if len(assistenten) > 1:
-        result["assistent2"] = assistenten[1]
-
-    return result
+    return schiedsrichter, var
 
 
 def lade_sfl(url):
@@ -230,21 +103,14 @@ def lade_sfl(url):
     match_data = data["pageProps"]["matchData"]
 
     # ---------------------------------------------------------
-    # OFFIZIELLE DIREKT AUS DEM SFL MATCHCENTER
+    # SCHIEDSRICHTER + VAR
     # ---------------------------------------------------------
 
     try:
-        header_data = _hole_header(opta_id)
-        offizielle = _extrahiere_offizielle(header_data)
+        schiedsrichter, var = hole_offizielle(opta_id)
     except Exception:
-        offizielle = {
-            "schiedsrichter": "",
-            "assistent1": "",
-            "assistent2": "",
-            "vierter_offizieller": "",
-            "var": "",
-            "avar": "",
-        }
+        schiedsrichter = ""
+        var = ""
 
     # ---------------------------------------------------------
     # COMMENTARY
@@ -272,7 +138,8 @@ def lade_sfl(url):
 
     if result.returncode != 0:
         raise Exception(
-            result.stderr or "Fehler beim Abrufen der SFL-Kommentare."
+            result.stderr or
+            "Fehler beim Abrufen der SFL-Kommentare."
         )
 
     try:
@@ -288,9 +155,17 @@ def lade_sfl(url):
         .get("comment", "")
     )
 
+    # ---------------------------------------------------------
+    # ABSENZEN
+    # ---------------------------------------------------------
+
     def extrahiere_absenzen(teamname):
 
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(
+            html,
+            "html.parser"
+        )
+
         text = soup.get_text("\n")
 
         teile = text.split(teamname)
@@ -308,7 +183,10 @@ def lade_sfl(url):
 
         def hole(feld):
 
-            m = re.search(rf"{feld}:\s*(.*)", block)
+            m = re.search(
+                rf"{feld}:\s*(.*)",
+                block
+            )
 
             if not m:
                 return []
@@ -346,8 +224,14 @@ def lade_sfl(url):
         zeit = zeit[:-1]
 
     if datum:
+
         jahr, monat, tag = datum.split("-")
-        datum = f"{int(tag)}.{int(monat)}.{jahr}"
+
+        datum = (
+            f"{int(tag)}."
+            f"{int(monat)}."
+            f"{jahr}"
+        )
 
     zeit = zeit[:5]
 
@@ -356,28 +240,42 @@ def lade_sfl(url):
     # ---------------------------------------------------------
 
     report = {
-        "heim": match_data.get("homeTeamName", ""),
-        "gast": match_data.get("awayTeamName", ""),
+
+        "heim": match_data.get(
+            "homeTeamName",
+            ""
+        ),
+
+        "gast": match_data.get(
+            "awayTeamName",
+            ""
+        ),
 
         "datum": datum,
+
         "zeit": zeit,
 
-        "stadion": match_data.get("venueLongName", ""),
+        "stadion": match_data.get(
+            "venueLongName",
+            ""
+        ),
 
-        # Offizielle automatisch aus SFL
-        "schiedsrichter": offizielle["schiedsrichter"],
-        "assistent1": offizielle["assistent1"],
-        "assistent2": offizielle["assistent2"],
-        "vierter_offizieller": offizielle["vierter_offizieller"],
-        "var": offizielle["var"],
-        "avar": offizielle["avar"],
+        # NUR diese beiden Offiziellen
+        "schiedsrichter": schiedsrichter,
+        "var": var,
 
         "heim_abwesend": extrahiere_absenzen(
-            match_data.get("homeTeamName", "")
+            match_data.get(
+                "homeTeamName",
+                ""
+            )
         ),
 
         "gast_abwesend": extrahiere_absenzen(
-            match_data.get("awayTeamName", "")
+            match_data.get(
+                "awayTeamName",
+                ""
+            )
         ),
 
         "lineups": {},
