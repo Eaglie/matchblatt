@@ -4,7 +4,10 @@ from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
 from report import erstelle_report
 
-st.set_page_config(page_title="Matchblatt", layout="wide")
+st.set_page_config(
+    page_title="Matchblatt",
+    layout="wide"
+)
 
 st.title("MATCHBLATT")
 
@@ -14,18 +17,47 @@ gast_url = st.text_input("Transfermarkt Gast")
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
-    st.write("Lade SFL...")
-    sfl = lade_sfl(sfl_url)
+    if not sfl_url.strip():
+        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.stop()
 
-    st.write("Lade Heim...")
-    heim = lade_transfermarkt(heim_url, sfl["heim"])
+    if not heim_url.strip():
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.stop()
 
-    st.write("Lade Gast...")
-    gast = lade_transfermarkt(gast_url, sfl["gast"])
+    if not gast_url.strip():
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.stop()
 
-    heim["letzter_gegner"] = sfl["gast"]
-    gast["letzter_gegner"] = sfl["heim"]
+    try:
 
-    erstelle_report(sfl, gast, heim)
+        with st.spinner("Lade SFL..."):
+            sfl = lade_sfl(sfl_url)
 
-    st.success("Matchblatt erstellt!")
+        with st.spinner("Lade Heimteam von Transfermarkt..."):
+            heim = lade_transfermarkt(
+                heim_url,
+                sfl["heim"]
+            )
+
+        with st.spinner("Lade Gastteam von Transfermarkt..."):
+            gast = lade_transfermarkt(
+                gast_url,
+                sfl["gast"]
+            )
+
+        heim["letzter_gegner"] = sfl["gast"]
+        gast["letzter_gegner"] = sfl["heim"]
+
+        with st.spinner("Erstelle Matchblatt..."):
+            erstelle_report(
+                sfl,
+                gast,
+                heim
+            )
+
+        st.success("✅ Matchblatt erfolgreich erstellt.")
+
+    except Exception as e:
+        st.error("❌ Fehler beim Erstellen des Matchblatts.")
+        st.exception(e)
