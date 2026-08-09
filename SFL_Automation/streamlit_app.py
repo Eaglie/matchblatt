@@ -1,6 +1,6 @@
 import streamlit as st
-import base64
 from pathlib import Path
+import streamlit.components.v1 as components
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -15,10 +15,6 @@ st.set_page_config(
 st.title("MATCHBLATT")
 
 
-# ---------------------------------------------------------
-# EINGABEMASKE
-# ---------------------------------------------------------
-
 sfl_url = st.text_input(
     "SFL Matchcenter URL"
 )
@@ -32,125 +28,63 @@ gast_url = st.text_input(
 )
 
 
-# ---------------------------------------------------------
-# MATCHBLATT ERSTELLEN
-# ---------------------------------------------------------
-
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error(
-            "Bitte die SFL Matchcenter URL eingeben."
-        )
+        st.error("Bitte die SFL Matchcenter URL eingeben.")
         st.stop()
 
     if not heim_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Heimteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
         st.stop()
 
     if not gast_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Gastteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
         st.stop()
 
     try:
 
-        # -------------------------------------------------
-        # SFL
-        # -------------------------------------------------
-
         with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(
-                sfl_url.strip()
-            )
+            sfl = lade_sfl(sfl_url.strip())
 
-        # -------------------------------------------------
-        # HEIMTEAM TRANSFERMARKT
-        # -------------------------------------------------
-
-        with st.spinner(
-            "Lade Heimteam von Transfermarkt..."
-        ):
+        with st.spinner("Lade Heimteam von Transfermarkt..."):
             heim = lade_transfermarkt(
                 heim_url.strip(),
                 sfl["heim"]
             )
 
-        # -------------------------------------------------
-        # GASTTEAM TRANSFERMARKT
-        # -------------------------------------------------
-
-        with st.spinner(
-            "Lade Gastteam von Transfermarkt..."
-        ):
+        with st.spinner("Lade Gastteam von Transfermarkt..."):
             gast = lade_transfermarkt(
                 gast_url.strip(),
                 sfl["gast"]
             )
 
-        # -------------------------------------------------
-        # REPORT
-        # -------------------------------------------------
-
-        with st.spinner(
-            "Erstelle Matchblatt..."
-        ):
+        with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
                 sfl,
                 heim,
                 gast
             )
 
-        # -------------------------------------------------
-        # REPORT PRÜFEN
-        # -------------------------------------------------
-
-        report_path = Path(
-            "report.html"
-        )
+        report_path = Path("report.html")
 
         if not report_path.exists():
             raise FileNotFoundError(
-                "report.html wurde nach der Erstellung "
-                "nicht gefunden."
+                "report.html wurde nicht erstellt."
             )
-
-        # -------------------------------------------------
-        # REPORT EINLESEN
-        # -------------------------------------------------
 
         html = report_path.read_text(
             encoding="utf-8"
         )
 
-        encoded = base64.b64encode(
-            html.encode("utf-8")
-        ).decode("ascii")
-
-        report_url = (
-            "data:text/html;base64,"
-            + encoded
-        )
-
-        # -------------------------------------------------
-        # ERFOLG
-        # -------------------------------------------------
-
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # -------------------------------------------------
-        # ÖFFNEN
-        # -------------------------------------------------
-
-        st.link_button(
-            "MATCHBLATT ÖFFNEN",
-            report_url,
-            type="secondary"
+        components.html(
+            html,
+            height=1800,
+            scrolling=True
         )
 
     except Exception as e:
