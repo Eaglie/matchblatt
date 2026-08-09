@@ -1,4 +1,6 @@
 import streamlit as st
+import base64
+from pathlib import Path
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -56,7 +58,36 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 heim
             )
 
+        report_path = Path("report.html")
+
+        if not report_path.exists():
+            raise FileNotFoundError(
+                "report.html wurde nach der Erstellung nicht gefunden."
+            )
+
+        html = report_path.read_text(encoding="utf-8")
+        encoded = base64.b64encode(
+            html.encode("utf-8")
+        ).decode("ascii")
+
+        st.markdown(
+            f'''<script>
+const url = "data:text/html;base64,{encoded}";
+window.open(url, "_blank");
+</script>''',
+            unsafe_allow_html=True
+        )
+
         st.success("✅ Matchblatt erfolgreich erstellt.")
+
+        st.markdown(
+            f'''<a href="data:text/html;base64,{encoded}"
+target="_blank"
+style="display:inline-block;padding:12px 20px;background:#ffffff;border:1px solid #999;border-radius:6px;text-decoration:none;color:#222;font-weight:600;">
+MATCHBLATT ÖFFNEN
+</a>''',
+            unsafe_allow_html=True
+        )
 
     except Exception as e:
         st.error("❌ Fehler beim Erstellen des Matchblatts.")
