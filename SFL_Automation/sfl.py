@@ -1,25 +1,28 @@
-def hole_offizielle(opta_id, heim="", gast=""):
-    """
-    Holt Schiedsrichter und VAR aus dem SFL-Header.
-    Die API liefert die Daten unter:
-    fixturesAndResults -> match -> liveData ->
-    matchDetailsExtra -> matchOfficial
-    """
+import json
+import re
+import requests
+from bs4 import BeautifulSoup
 
+
+ACCOUNT_KEY = "Os-hXumIK"
+
+
+def lade_offizielle(opta_id):
     url = (
         "https://origins-widgets-orchestrator.origins-digital.com"
-        f"/api/header?fixtureId={opta_id}"
+        "/api/header"
     )
 
     response = requests.get(
         url,
+        params={"fixtureId": opta_id},
         headers={
             "Accept": "*/*",
             "Accept-Language": "de",
             "Origin": "https://sfl.ch",
             "Referer": "https://sfl.ch/",
             "User-Agent": "Mozilla/5.0",
-            "x-account-key": "Os-hXumIK",
+            "x-account-key": ACCOUNT_KEY,
         },
         timeout=30,
     )
@@ -34,53 +37,32 @@ def hole_offizielle(opta_id, heim="", gast=""):
         .get("match", [])
     )
 
-    schiedsrichter = ""
-    var = ""
-
-    # Passendes Spiel suchen
-    passendes_match = None
-
-    for match in matches:
-
-        match_info = match.get("matchInfo", {})
-
-        description = match_info.get(
-            "description",
-            ""
-        )
-
-        if heim and gast:
-            if (
-                heim.replace("FC ", "") in description
-                and gast.replace("FC ", "") in description
-            ):
-                passendes_match = match
-                break
-
-        # Falls nur ein Match zurückkommt
-        if len(matches) == 1:
-            passendes_match = match
-
-    if passendes_match is None:
+    if not matches:
         return "", ""
 
-    offizielle = (
-        passendes_match
+    match = matches[0]
+
+    officials = (
+        match
         .get("liveData", {})
         .get("matchDetailsExtra", {})
         .get("matchOfficial", [])
     )
 
-    for person in offizielle:
+    schiedsrichter = ""
+    var = ""
 
-        typ = person.get("type", "")
+    for official in officials:
+
+        typ = official.get("type", "")
 
         name = " ".join(
-            x for x in [
-                person.get("firstName", ""),
-                person.get("lastName", "")
+            part
+            for part in [
+                official.get("firstName", ""),
+                official.get("lastName", "")
             ]
-            if x
+            if part
         ).strip()
 
         if typ == "Main":
@@ -90,3 +72,230 @@ def hole_offizielle(opta_id, heim="", gast=""):
             var = name
 
     return schiedsrichter, var
+
+
+def lade_sfl(url):
+
+    opta_id = url.rstrip("/").split("/")[-1]
+
+    json_url = (
+        "https://sfl.ch/_next/data/"
+        "Y-9NZGIm1S6FvFeQABSly/"
+        f"de/match-center/{opta_id}.json"
+        f"?optaId={opta_id}"
+    )
+
+    response = requests.get(
+        json_url,
+        headers={
+            "x-nextjs-data": "1",
+            "User-Agent": "Mozilla/5.0",
+        },
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    match_data = data["pageProps"]["matchData"]
+
+    # ---------------------------------------------------------
+    # SCHIEDSRICHTER + VAR
+    # ---------------------------------------------------------
+
+    schiedsrichter, var = lade_offizielle(opta_id)
+
+    # ---------------------------------------------------------
+    # COMMENTARY
+    # ---------------------------------------------------------
+
+    commentary_url = (
+        "https://origins-widgets-orchestrator.origins-digital.com"
+        "/api/commentary"
+    )
+
+    commentary_response = requests.get(
+        commentary_url,
+        params={"fixtureId": opta_id},
+        headers={
+            "Accept": "*/*",
+            "Accept-Language": "de",
+            "Origin": "https://sfl.ch",
+            "Referer": "https://sfl.ch/",
+            "User-Agent": "Mozilla/5.0",
+            "x-account-key": ACCOUNT_KEY,
+        },
+        timeout=30,
+    )
+
+    commentary = {}
+
+    if commentary_response.ok:
+        try:
+            commentary = commentary_response.json()
+        except Exception:
+            commentary = {}
+
+    html = (
+        commentary
+        .get("commentary", {})
+        .get("messages", [{}])[0]
+        .get("message", [{}])[0]
+        .get("comment", "")
+    )
+
+    # ---------------------------------------------------------
+    # ABSENZEN
+    # ---------------------------------------------------------
+
+    def extrahiere_absenzen(teamname):
+
+        soup = BeautifulSoup(
+            html,
+            "html.parser"
+        )
+
+        text = soup.get_text("\n")
+
+        teile = text.split(teamname)
+
+        if len(teile) < 2:
+            return {
+                "gesperrt": [],
+                "verletzt": [],
+                "krank": [],
+                "fraglich": [],
+                "nicht_im_kader": [],
+            }
+
+        block = teile[1]
+
+        def hole(feld):
+
+            match = re.search(
+                rf"{feld}:\s*(.*)",
+                block
+            )
+
+            if not match:
+                return []
+
+            wert = match.group(1).strip()
+
+            if wert in ("", "-", "..."):
+                return []
+
+            return [
+                x.strip()
+                for x in wert.split(",")
+                if x.strip()
+            ]
+
+        return {
+            "gesperrt": hole("Gesperrt"),
+            "verletzt": hole("Verletzt"),
+            "krank": hole("Krank"),
+            "fraglich": hole("Fraglich"),
+            "nicht_im_kader": [],
+        }
+
+    # ---------------------------------------------------------
+    # DATUM / ZEIT
+    # ---------------------------------------------------------
+
+    datum = match_data.get("date", "")
+    zeit = match_data.get("time", "")
+
+    if datum.endswith("Z"):
+        datum = datum[:-1]
+
+    if zeit.endswith("Z"):
+        zeit = zeit[:-1]
+
+    if datum:
+
+        jahr, monat, tag = datum.split("-")
+
+        datum = (
+            f"{int(tag)}."
+            f"{int(monat)}."
+            f"{jahr}"
+        )
+
+    zeit = zeit[:5]
+
+    # ---------------------------------------------------------
+    # REPORT
+    # ---------------------------------------------------------
+
+    return {
+        "heim": match_data.get(
+            "homeTeamName",
+            ""
+        ),
+
+        "gast": match_data.get(
+            "awayTeamName",
+            ""
+        ),
+
+        "datum": datum,
+
+        "zeit": zeit,
+
+        "stadion": match_data.get(
+            "venueLongName",
+            ""
+        ),
+
+        "schiedsrichter": schiedsrichter,
+
+        "var": var,
+
+        "heim_abwesend": extrahiere_absenzen(
+            match_data.get(
+                "homeTeamName",
+                ""
+            )
+        ),
+
+        "gast_abwesend": extrahiere_absenzen(
+            match_data.get(
+                "awayTeamName",
+                ""
+            )
+        ),
+
+        "lineups": {},
+
+        "heim_letztes_spiel": {
+            "gegner": "",
+            "resultat": "",
+            "ausgang": "",
+        },
+
+        "gast_letztes_spiel": {
+            "gegner": "",
+            "resultat": "",
+            "ausgang": "",
+        },
+    }
+
+
+def _sauber(text):
+
+    text = text.strip()
+
+    if text in ("", "-", "..."):
+        return []
+
+    return [
+        x.strip()
+        for x in text.split(",")
+        if x.strip()
+    ]
+
+
+def auswerten(header, commentary, lineups):
+    return {}
