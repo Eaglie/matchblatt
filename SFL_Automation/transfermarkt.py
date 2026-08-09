@@ -19,7 +19,6 @@ def _normalize_team(name):
     )
 
     name = name.lower()
-
     name = name.replace("&", "and")
 
     name = re.sub(
@@ -29,7 +28,6 @@ def _normalize_team(name):
     )
 
     # Jahreszahlen am Ende entfernen
-    # z.B. FC Basel 1893 -> FC Basel
     name = re.sub(
         r"(18|19|20)\d{2}$",
         "",
@@ -40,15 +38,6 @@ def _normalize_team(name):
 
 
 def _team_match(input_team, page_team):
-    """
-    Vergleicht Vereinsnamen robust.
-
-    Beispiele:
-    FC Basel 1893 == FC Basel
-    FC St. Gallen 1879 == FC St. Gallen
-    FC Lausanne-Sport == Lausanne-Sport
-    """
-
     a = _normalize_team(input_team)
     b = _normalize_team(page_team)
 
@@ -65,32 +54,26 @@ def _team_match(input_team, page_team):
         "bc",
     )
 
-    a_without_prefix = a
-    b_without_prefix = b
+    aa = a
+    bb = b
 
     for prefix in prefixes:
 
-        if a_without_prefix.startswith(prefix):
-            a_without_prefix = (
-                a_without_prefix[len(prefix):]
-            )
+        if aa.startswith(prefix):
+            aa = aa[len(prefix):]
 
-        if b_without_prefix.startswith(prefix):
-            b_without_prefix = (
-                b_without_prefix[len(prefix):]
-            )
+        if bb.startswith(prefix):
+            bb = bb[len(prefix):]
 
-    if (
-        a_without_prefix
-        and b_without_prefix
-        and a_without_prefix == b_without_prefix
-    ):
-        return True
-
-    return False
+    return bool(
+        aa
+        and bb
+        and aa == bb
+    )
 
 
 def _find_team_links(soup):
+
     kandidaten = []
 
     for a in soup.find_all(
@@ -114,9 +97,6 @@ def _find_team_links(soup):
         if "/verein/" not in href:
             continue
 
-        if len(text) < 2:
-            continue
-
         item = (
             text,
             href
@@ -132,10 +112,6 @@ def _extract_team_names(
     soup,
     teamname
 ):
-    """
-    Ermittelt Heim- und Gastmannschaft.
-    Es wird niemals geraten.
-    """
 
     # ---------------------------------------------------------
     # 1. Klassische Transfermarkt-Struktur
@@ -180,7 +156,51 @@ def _extract_team_names(
                 return heim, gast
 
     # ---------------------------------------------------------
-    # 2. Überschrift
+    # 2. Alle sb-team Elemente
+    # ---------------------------------------------------------
+
+    teams = soup.select(
+        ".sb-team"
+    )
+
+    gefunden = []
+
+    for team in teams:
+
+        link = team.select_one(
+            "a[href*='/verein/']"
+        )
+
+        if not link:
+            continue
+
+        name = link.get_text(
+            " ",
+            strip=True
+        )
+
+        if not name:
+            continue
+
+        if name not in gefunden:
+            gefunden.append(
+                name
+            )
+
+    if len(gefunden) >= 2:
+
+        # Nur die ersten zwei Mannschaften
+        heim = gefunden[0]
+        gast = gefunden[1]
+
+        if (
+            _normalize_team(heim)
+            != _normalize_team(gast)
+        ):
+            return heim, gast
+
+    # ---------------------------------------------------------
+    # 3. H1 / Überschrift
     # ---------------------------------------------------------
 
     for selector in [
@@ -201,6 +221,8 @@ def _extract_team_names(
             strip=True
         )
 
+        # z.B.
+        # FC Basel - Lausanne-Sport
         match = re.search(
             r"(.+?)\s+-\s+(.+?)(?:\s*,|\s*$)",
             text
@@ -218,59 +240,45 @@ def _extract_team_names(
             and _normalize_team(heim)
             != _normalize_team(gast)
         ):
-
             return heim, gast
 
     # ---------------------------------------------------------
-    # 3. Vereinslinks
+    # 4. Vereinslinks
     # ---------------------------------------------------------
 
     links = _find_team_links(
         soup
     )
 
-    normalized_requested = _normalize_team(
-        teamname
-    )
-
-    passende = []
-
-    for name, href in links:
-
+    passende = [
+        name
+        for name, href in links
         if _team_match(
             teamname,
             name
-        ):
-            passende.append(
-                (name, href)
-            )
+        )
+    ]
 
     if len(passende) == 1:
 
-        eigener_name = passende[0][0]
-
-        andere = []
-
-        for item in links:
-
+        andere = [
+            name
+            for name, href in links
             if not _team_match(
                 teamname,
-                item[0]
-            ):
-                andere.append(
-                    item
-                )
+                name
+            )
+        ]
 
-        # Genau ein möglicher Gegner
         if len(andere) == 1:
 
-            teams = soup.select(
-                ".sb-team"
-            )
-
+            # Heim/Gast-Reihenfolge muss aus
+            # der Seite stammen.
             ordered = []
 
-            for team in teams:
+            for team in soup.select(
+                ".sb-team"
+            ):
 
                 link = team.select_one(
                     "a[href*='/verein/']"
@@ -290,70 +298,117 @@ def _extract_team_names(
                     )
 
             if len(ordered) == 2:
-
                 return (
                     ordered[0],
                     ordered[1]
                 )
 
-            raise ValueError(
-                "Transfermarkt: Das gewünschte Team "
-                "wurde gefunden, aber die Heim-/Gast-"
-                "Reihenfolge konnte nicht eindeutig "
-                "bestimmt werden."
-            )
-
     raise ValueError(
-        "Transfermarkt: Heim- und Gastteam konnten "
-        "nicht eindeutig bestimmt werden."
+        "Transfermarkt: Heim- und Gastteam "
+        "konnten nicht eindeutig bestimmt werden."
     )
+
+
+def _score_from_text(text):
+
+    if not text:
+        return None
+
+    match = re.fullmatch(
+        r"\s*(\d+)\s*:\s*(\d+)\s*",
+        text
+    )
+
+    if not match:
+        return None
+
+    a = int(
+        match.group(1)
+    )
+
+    b = int(
+        match.group(2)
+    )
+
+    if (
+        0 <= a <= 30
+        and 0 <= b <= 30
+    ):
+        return (
+            a,
+            b
+        )
+
+    return None
 
 
 def _extract_score(soup):
 
-    score_box = soup.select_one(
-        ".sb-core-info"
-    )
+    # ---------------------------------------------------------
+    # Direkter Ergebnisbereich
+    # ---------------------------------------------------------
 
-    if not score_box:
+    selectors = [
+        ".sb-core-info",
+        ".sb-endstand",
+        ".sb-result",
+        ".sb-score",
+        ".sb-final-score",
+    ]
 
-        score_box = soup.select_one(
-            ".sb-endstand"
+    for selector in selectors:
+
+        elements = soup.select(
+            selector
         )
 
-    if not score_box:
+        for element in elements:
 
-        score_box = soup.select_one(
-            ".sb-result"
+            for text in element.stripped_strings:
+
+                score = _score_from_text(
+                    text
+                )
+
+                if score:
+                    return score
+
+    # ---------------------------------------------------------
+    # Text des oberen Spielbereichs
+    # ---------------------------------------------------------
+
+    for element in soup.find_all(
+        ["div", "span"]
+    ):
+
+        classes = " ".join(
+            element.get(
+                "class",
+                []
+            )
+        ).lower()
+
+        if not any(
+            x in classes
+            for x in [
+                "score",
+                "result",
+                "spielstand",
+                "endstand",
+                "core-info",
+            ]
+        ):
+            continue
+
+        score = _score_from_text(
+            element.get_text(
+                " ",
+                strip=True
+            )
         )
 
-    if score_box:
-
-        for text in score_box.stripped_strings:
-
-            text = text.strip()
-
-            match = re.fullmatch(
-                r"(\d+)\s*:\s*(\d+)",
-                text
-            )
-
-            if not match:
-                continue
-
-            a = int(
-                match.group(1)
-            )
-
-            b = int(
-                match.group(2)
-            )
-
-            if (
-                0 <= a <= 30
-                and 0 <= b <= 30
-            ):
-                return a, b
+        if score:
+            return score
 
     raise ValueError(
         "Transfermarkt: Endresultat konnte "
@@ -361,7 +416,236 @@ def _extract_score(soup):
     )
 
 
-def _extract_formation(soup):
+def _player_from_div(div):
+
+    style = div.get(
+        "style",
+        ""
+    )
+
+    top = re.search(
+        r"top:\s*([\d.]+)%",
+        style
+    )
+
+    left = re.search(
+        r"left:\s*([\d.]+)%",
+        style
+    )
+
+    nummer = div.select_one(
+        ".tm-shirt-number"
+    )
+
+    name = div.select_one(
+        ".formation-number-name"
+    )
+
+    if not (
+        top
+        and left
+        and nummer
+        and name
+    ):
+        return None
+
+    return {
+        "nummer": nummer.get_text(
+            strip=True
+        ),
+        "name": name.get_text(
+            " ",
+            strip=True
+        ),
+        "x": float(
+            left.group(1)
+        ),
+        "y": float(
+            top.group(1)
+        ),
+    }
+
+
+def _deduplicate_players(
+    players
+):
+
+    result = []
+    seen = set()
+
+    for player in players:
+
+        key = (
+            player["nummer"],
+            player["name"],
+            player["x"],
+            player["y"],
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        result.append(
+            player
+        )
+
+    return result
+
+
+def _extract_players(
+    soup,
+    is_heim
+):
+
+    # ---------------------------------------------------------
+    # 1. Normaler Heim-/Gast-Container
+    # ---------------------------------------------------------
+
+    if is_heim:
+
+        selectors = [
+            "div.sb-aufstellung-heim",
+            ".sb-aufstellung-heim",
+        ]
+
+        label = "Heim"
+
+    else:
+
+        selectors = [
+            "div.sb-aufstellung-gast",
+            ".sb-aufstellung-gast",
+        ]
+
+        label = "Gast"
+
+    for selector in selectors:
+
+        container = soup.select_one(
+            selector
+        )
+
+        if not container:
+            continue
+
+        divs = container.select(
+            "div.formation-player-container"
+        )
+
+        players = []
+
+        for div in divs:
+
+            player = _player_from_div(
+                div
+            )
+
+            if player:
+                players.append(
+                    player
+                )
+
+        players = _deduplicate_players(
+            players
+        )
+
+        if len(players) == 11:
+            return players
+
+    # ---------------------------------------------------------
+    # 2. Alle Formation-Spieler
+    #
+    # Wenn Transfermarkt die Teamcontainer geändert hat,
+    # stehen die Spieler häufig trotzdem gemeinsam im DOM.
+    # Die Reihenfolge der beiden Aufstellungen wird dabei
+    # anhand der y/x-Positionen nicht erraten.
+    # ---------------------------------------------------------
+
+    alle = soup.select(
+        "div.formation-player-container"
+    )
+
+    if not alle:
+
+        alle = soup.select(
+            ".formation-player-container"
+        )
+
+    if not alle:
+
+        raise ValueError(
+            f"Transfermarkt: Keine "
+            f"Formation-Spieler für {label} gefunden."
+        )
+
+    players = []
+
+    for div in alle:
+
+        player = _player_from_div(
+            div
+        )
+
+        if player:
+            players.append(
+                player
+            )
+
+    players = _deduplicate_players(
+        players
+    )
+
+    # ---------------------------------------------------------
+    # 3. Genau 22 Spieler:
+    # Transfermarkt liefert Heim und Gast gemeinsam.
+    # Die beiden Gruppen werden anhand der horizontalen
+    # Feldposition getrennt.
+    # ---------------------------------------------------------
+
+    if len(players) == 22:
+
+        links = [
+            p
+            for p in players
+            if p["x"] < 50
+        ]
+
+        rechts = [
+            p
+            for p in players
+            if p["x"] >= 50
+        ]
+
+        if (
+            len(links) == 11
+            and len(rechts) == 11
+        ):
+
+            # Bei Transfermarkt ist die Aufstellung
+            # des Heimteams links und die des Gastteams rechts.
+            if is_heim:
+                return links
+
+            return rechts
+
+    # ---------------------------------------------------------
+    # 4. Niemals einfach [:11] / [11:] nehmen.
+    # ---------------------------------------------------------
+
+    raise ValueError(
+        f"Transfermarkt: Die {label}-Startelf "
+        "konnte nicht eindeutig bestimmt werden. "
+        f"Gefundene Formation-Spieler: {len(players)}."
+    )
+
+
+def _extract_formation(
+    soup
+):
 
     text = soup.get_text(
         "\n"
@@ -376,144 +660,6 @@ def _extract_formation(soup):
         return match.group(1).strip()
 
     return ""
-
-
-def _extract_players(
-    soup,
-    is_heim
-):
-    """
-    Holt ausschließlich die Startelf des
-    eindeutig bestimmten Teams.
-    """
-
-    if is_heim:
-
-        container = soup.select_one(
-            "div.sb-aufstellung-heim"
-        )
-
-        team_label = "Heim"
-
-    else:
-
-        container = soup.select_one(
-            "div.sb-aufstellung-gast"
-        )
-
-        team_label = "Gast"
-
-    if not container:
-
-        raise ValueError(
-            f"Transfermarkt: {team_label}-Aufstellung "
-            "nicht gefunden."
-        )
-
-    containers = container.select(
-        "div.formation-player-container"
-    )
-
-    if not containers:
-
-        raise ValueError(
-            f"Transfermarkt: Keine Spieler in der "
-            f"{team_label}-Aufstellung gefunden."
-        )
-
-    spieler = []
-
-    for div in containers:
-
-        style = div.get(
-            "style",
-            ""
-        )
-
-        top = re.search(
-            r"top:\s*([\d.]+)%",
-            style
-        )
-
-        left = re.search(
-            r"left:\s*([\d.]+)%",
-            style
-        )
-
-        nummer = div.select_one(
-            ".tm-shirt-number"
-        )
-
-        name = div.select_one(
-            ".formation-number-name"
-        )
-
-        if not (
-            top
-            and left
-            and nummer
-            and name
-        ):
-            continue
-
-        spieler.append(
-            {
-                "nummer": nummer.get_text(
-                    strip=True
-                ),
-
-                "name": name.get_text(
-                    " ",
-                    strip=True
-                ),
-
-                "x": float(
-                    left.group(1)
-                ),
-
-                "y": float(
-                    top.group(1)
-                ),
-            }
-        )
-
-    # ---------------------------------------------------------
-    # DUPLIKATE ENTFERNEN
-    # ---------------------------------------------------------
-
-    eindeutig = []
-
-    gesehen = set()
-
-    for spieler_daten in spieler:
-
-        key = (
-            spieler_daten["nummer"],
-            spieler_daten["name"],
-            spieler_daten["x"],
-            spieler_daten["y"],
-        )
-
-        if key in gesehen:
-            continue
-
-        gesehen.add(
-            key
-        )
-
-        eindeutig.append(
-            spieler_daten
-        )
-
-    if len(eindeutig) != 11:
-
-        raise ValueError(
-            f"Transfermarkt: Die {team_label}-Startelf "
-            f"enthält nicht exakt 11 Spieler. "
-            f"Gefunden: {len(eindeutig)}."
-        )
-
-    return eindeutig
 
 
 def lade_transfermarkt(
@@ -557,10 +703,6 @@ def lade_transfermarkt(
                 )
 
             except Exception:
-
-                # Transfermarkt kann die Navigation
-                # offen halten. Bereits geladenes HTML
-                # trotzdem auswerten.
                 pass
 
             page.wait_for_timeout(
@@ -597,7 +739,7 @@ def lade_transfermarkt(
     )
 
     # ---------------------------------------------------------
-    # TEAMZUORDNUNG
+    # EIGENES TEAM
     # ---------------------------------------------------------
 
     heim_match = _team_match(
@@ -622,7 +764,7 @@ def lade_transfermarkt(
 
         raise ValueError(
             f"Transfermarkt: '{teamname}' wurde "
-            f"nicht gefunden.\n"
+            "nicht gefunden.\n"
             f"Heim: {heim_team}\n"
             f"Gast: {gast_team}"
         )
@@ -712,7 +854,7 @@ def lade_transfermarkt(
     )
 
     # ---------------------------------------------------------
-    # LETZTE SICHERHEITSPRÜFUNG
+    # ABSCHLIESSENDE SICHERHEITSPRÜFUNG
     # ---------------------------------------------------------
 
     erkannter_verein = (
