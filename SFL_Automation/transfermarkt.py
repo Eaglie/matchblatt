@@ -20,34 +20,88 @@ def _normalize_team(name):
 
     name = name.lower()
 
-    return re.sub(
-        r"[^a-z0-9]",
+    name = name.replace("&", "and")
+
+    name = re.sub(
+        r"[^a-z0-9]+",
         "",
         name
     )
 
+    # Jahreszahlen am Ende entfernen
+    # z.B. FC Basel 1893 -> FC Basel
+    name = re.sub(
+        r"(18|19|20)\d{2}$",
+        "",
+        name
+    )
+
+    return name
+
 
 def _team_match(input_team, page_team):
+    """
+    Vergleicht Vereinsnamen robust.
+
+    Beispiele:
+    FC Basel 1893 == FC Basel
+    FC St. Gallen 1879 == FC St. Gallen
+    FC Lausanne-Sport == Lausanne-Sport
+    """
+
     a = _normalize_team(input_team)
     b = _normalize_team(page_team)
 
     if not a or not b:
         return False
 
-    return a == b
+    if a == b:
+        return True
+
+    prefixes = (
+        "fc",
+        "ac",
+        "sc",
+        "bc",
+    )
+
+    a_without_prefix = a
+    b_without_prefix = b
+
+    for prefix in prefixes:
+
+        if a_without_prefix.startswith(prefix):
+            a_without_prefix = (
+                a_without_prefix[len(prefix):]
+            )
+
+        if b_without_prefix.startswith(prefix):
+            b_without_prefix = (
+                b_without_prefix[len(prefix):]
+            )
+
+    if (
+        a_without_prefix
+        and b_without_prefix
+        and a_without_prefix == b_without_prefix
+    ):
+        return True
+
+    return False
 
 
 def _find_team_links(soup):
-    """
-    Sucht Transfermarkt-Vereinslinks und versucht daraus
-    die beiden Mannschaften des Spielberichts zu bestimmen.
-    """
-
     kandidaten = []
 
-    for a in soup.find_all("a", href=True):
+    for a in soup.find_all(
+        "a",
+        href=True
+    ):
 
-        href = a.get("href", "")
+        href = a.get(
+            "href",
+            ""
+        )
 
         text = a.get_text(
             " ",
@@ -60,7 +114,6 @@ def _find_team_links(soup):
         if "/verein/" not in href:
             continue
 
-        # Nur echte Vereinsnamen berücksichtigen
         if len(text) < 2:
             continue
 
@@ -75,11 +128,12 @@ def _find_team_links(soup):
     return kandidaten
 
 
-def _extract_team_names(soup, teamname):
+def _extract_team_names(
+    soup,
+    teamname
+):
     """
     Ermittelt Heim- und Gastmannschaft.
-
-    Mehrere Quellen werden geprüft.
     Es wird niemals geraten.
     """
 
@@ -126,7 +180,7 @@ def _extract_team_names(soup, teamname):
                 return heim, gast
 
     # ---------------------------------------------------------
-    # 2. Überschrift des Spielberichts
+    # 2. Überschrift
     # ---------------------------------------------------------
 
     for selector in [
@@ -147,8 +201,6 @@ def _extract_team_names(soup, teamname):
             strip=True
         )
 
-        # Häufige Schreibweise:
-        # Heim - Gast
         match = re.search(
             r"(.+?)\s+-\s+(.+?)(?:\s*,|\s*$)",
             text
@@ -170,48 +222,48 @@ def _extract_team_names(soup, teamname):
             return heim, gast
 
     # ---------------------------------------------------------
-    # 3. Alle Vereinslinks untersuchen
+    # 3. Vereinslinks
     # ---------------------------------------------------------
 
     links = _find_team_links(
         soup
     )
 
-    passende = []
-
     normalized_requested = _normalize_team(
         teamname
     )
 
+    passende = []
+
     for name, href in links:
 
-        if _normalize_team(name) == normalized_requested:
-
+        if _team_match(
+            teamname,
+            name
+        ):
             passende.append(
                 (name, href)
             )
 
-    # Wenn genau das gewünschte Team gefunden wurde,
-    # versuchen wir den zweiten Verein aus dem Spielbericht
-    # zu bestimmen.
     if len(passende) == 1:
 
         eigener_name = passende[0][0]
 
-        andere = [
-            item
-            for item in links
-            if _normalize_team(item[0])
-            != normalized_requested
-        ]
+        andere = []
 
-        # Nur wenn genau ein plausibler zweiter Verein existiert
+        for item in links:
+
+            if not _team_match(
+                teamname,
+                item[0]
+            ):
+                andere.append(
+                    item
+                )
+
+        # Genau ein möglicher Gegner
         if len(andere) == 1:
 
-            anderer_name = andere[0][0]
-
-            # Reihenfolge aus vorhandenen Teamcontainern
-            # ermitteln, falls möglich.
             teams = soup.select(
                 ".sb-team"
             )
@@ -233,7 +285,9 @@ def _extract_team_names(soup, teamname):
                 )
 
                 if name:
-                    ordered.append(name)
+                    ordered.append(
+                        name
+                    )
 
             if len(ordered) == 2:
 
@@ -242,12 +296,11 @@ def _extract_team_names(soup, teamname):
                     ordered[1]
                 )
 
-            # Ohne belegbare Heim/Gast-Reihenfolge
-            # NICHT raten.
             raise ValueError(
-                "Transfermarkt: Das gewünschte Team wurde gefunden, "
-                "aber die Heim-/Gast-Reihenfolge konnte nicht "
-                "eindeutig bestimmt werden."
+                "Transfermarkt: Das gewünschte Team "
+                "wurde gefunden, aber die Heim-/Gast-"
+                "Reihenfolge konnte nicht eindeutig "
+                "bestimmt werden."
             )
 
     raise ValueError(
@@ -257,9 +310,6 @@ def _extract_team_names(soup, teamname):
 
 
 def _extract_score(soup):
-    """
-    Liest das Resultat nur aus dem Spielbereich.
-    """
 
     score_box = soup.select_one(
         ".sb-core-info"
@@ -299,7 +349,10 @@ def _extract_score(soup):
                 match.group(2)
             )
 
-            if 0 <= a <= 30 and 0 <= b <= 30:
+            if (
+                0 <= a <= 30
+                and 0 <= b <= 30
+            ):
                 return a, b
 
     raise ValueError(
@@ -309,6 +362,7 @@ def _extract_score(soup):
 
 
 def _extract_formation(soup):
+
     text = soup.get_text(
         "\n"
     )
@@ -324,10 +378,13 @@ def _extract_formation(soup):
     return ""
 
 
-def _extract_players(soup, is_heim):
+def _extract_players(
+    soup,
+    is_heim
+):
     """
-    Holt die Spieler ausschließlich aus dem
-    eindeutig bestimmten Heim-/Gast-Container.
+    Holt ausschließlich die Startelf des
+    eindeutig bestimmten Teams.
     """
 
     if is_heim:
@@ -420,7 +477,10 @@ def _extract_players(soup, is_heim):
             }
         )
 
-    # Duplikate entfernen
+    # ---------------------------------------------------------
+    # DUPLIKATE ENTFERNEN
+    # ---------------------------------------------------------
+
     eindeutig = []
 
     gesehen = set()
@@ -437,7 +497,9 @@ def _extract_players(soup, is_heim):
         if key in gesehen:
             continue
 
-        gesehen.add(key)
+        gesehen.add(
+            key
+        )
 
         eindeutig.append(
             spieler_daten
@@ -512,6 +574,7 @@ def lade_transfermarkt(
             browser.close()
 
     if not html:
+
         raise ValueError(
             "Transfermarkt-Seite konnte "
             "nicht geladen werden."
@@ -523,16 +586,18 @@ def lade_transfermarkt(
     )
 
     # ---------------------------------------------------------
-    # TEAMS
+    # HEIM / GAST
     # ---------------------------------------------------------
 
-    heim_team, gast_team = _extract_team_names(
-        soup,
-        teamname
+    heim_team, gast_team = (
+        _extract_team_names(
+            soup,
+            teamname
+        )
     )
 
     # ---------------------------------------------------------
-    # EIGENES TEAM EINDEUTIG BESTIMMEN
+    # TEAMZUORDNUNG
     # ---------------------------------------------------------
 
     heim_match = _team_match(
@@ -581,19 +646,19 @@ def lade_transfermarkt(
     ):
 
         raise ValueError(
-            "Transfermarkt: Eigener Verein und Gegner "
-            "sind identisch."
+            "Transfermarkt: Eigener Verein und "
+            "Gegner sind identisch."
         )
 
     # ---------------------------------------------------------
     # RESULTAT
     # ---------------------------------------------------------
 
-    score = _extract_score(
-        soup
+    heim_tore, gast_tore = (
+        _extract_score(
+            soup
+        )
     )
-
-    heim_tore, gast_tore = score
 
     if is_heim:
 
@@ -612,6 +677,10 @@ def lade_transfermarkt(
 
         eigene_tore = gast_tore
         gegentore = heim_tore
+
+    # ---------------------------------------------------------
+    # AUSGANG
+    # ---------------------------------------------------------
 
     if eigene_tore > gegentore:
 
