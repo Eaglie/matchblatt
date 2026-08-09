@@ -1,10 +1,10 @@
 import streamlit as st
-import base64
 from pathlib import Path
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
 from report import erstelle_report
+
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -16,6 +16,7 @@ st.title("MATCHBLATT")
 sfl_url = st.text_input("SFL Matchcenter URL")
 heim_url = st.text_input("Transfermarkt Heim")
 gast_url = st.text_input("Transfermarkt Gast")
+
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
@@ -65,27 +66,37 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nach der Erstellung nicht gefunden."
             )
 
-        html = report_path.read_text(encoding="utf-8")
-        encoded = base64.b64encode(
-            html.encode("utf-8")
-        ).decode("ascii")
+        static_dir = Path("static")
+        static_dir.mkdir(exist_ok=True)
 
-        st.markdown(
-            f'''<script>
-const url = "data:text/html;base64,{encoded}";
-window.open(url, "_blank");
-</script>''',
-            unsafe_allow_html=True
+        static_report = static_dir / "report.html"
+
+        static_report.write_text(
+            report_path.read_text(encoding="utf-8"),
+            encoding="utf-8"
         )
 
         st.success("✅ Matchblatt erfolgreich erstellt.")
 
         st.markdown(
-            f'''<a href="data:text/html;base64,{encoded}"
-target="_blank"
-style="display:inline-block;padding:12px 20px;background:#ffffff;border:1px solid #999;border-radius:6px;text-decoration:none;color:#222;font-weight:600;">
-MATCHBLATT ÖFFNEN
-</a>''',
+            """
+            <a
+                href="/app/static/report.html"
+                target="_blank"
+                style="
+                    display:inline-block;
+                    padding:12px 20px;
+                    background:#ffffff;
+                    border:1px solid #999;
+                    border-radius:6px;
+                    text-decoration:none;
+                    color:#222;
+                    font-weight:600;
+                "
+            >
+                MATCHBLATT ÖFFNEN
+            </a>
+            """,
             unsafe_allow_html=True
         )
 
