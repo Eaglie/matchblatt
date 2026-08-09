@@ -8,6 +8,15 @@ ACCOUNT_KEY = "Os-hXumIK"
 
 
 def lade_offizielle(opta_id):
+    """
+    Holt nur:
+    - Schiedsrichter
+    - VAR
+
+    Gibt immer ein Tupel zurück:
+    (schiedsrichter, var)
+    """
+
     url = (
         "https://origins-widgets-orchestrator.origins-digital.com"
         "/api/header"
@@ -31,45 +40,47 @@ def lade_offizielle(opta_id):
 
     data = response.json()
 
-    matches = (
-        data
-        .get("fixturesAndResults", {})
-        .get("match", [])
-    )
-
-    if not matches:
-        return "", ""
-
-    match = matches[0]
-
-    officials = (
-        match
-        .get("liveData", {})
-        .get("matchDetailsExtra", {})
-        .get("matchOfficial", [])
-    )
-
     schiedsrichter = ""
     var = ""
 
-    for official in officials:
+    def durchsuche(obj):
 
-        typ = official.get("type", "")
+        nonlocal schiedsrichter
+        nonlocal var
 
-        name = " ".join(
-            part
-            for part in [
-                official.get("firstName", ""),
-                official.get("lastName", "")
-            ]
-            if part
-        ).strip()
+        if isinstance(obj, dict):
 
-        if typ == "Main":
-            schiedsrichter = name
+            typ = obj.get("type", "")
 
-        elif typ == "Video Assistant Referee":
-            var = name
+            if isinstance(typ, str):
+
+                name = " ".join(
+                    x
+                    for x in (
+                        obj.get("firstName", ""),
+                        obj.get("lastName", "")
+                    )
+                    if isinstance(x, str) and x.strip()
+                ).strip()
+
+                if typ == "Main" and name:
+                    schiedsrichter = name
+
+                elif (
+                    typ == "Video Assistant Referee"
+                    and name
+                ):
+                    var = name
+
+            for value in obj.values():
+                durchsuche(value)
+
+        elif isinstance(obj, list):
+
+            for value in obj:
+                durchsuche(value)
+
+    durchsuche(data)
 
     return schiedsrichter, var
 
@@ -77,6 +88,11 @@ def lade_offizielle(opta_id):
 def lade_sfl(url):
 
     opta_id = url.rstrip("/").split("/")[-1]
+
+    if not opta_id:
+        raise ValueError(
+            "Keine gültige SFL Matchcenter URL."
+        )
 
     json_url = (
         "https://sfl.ch/_next/data/"
@@ -89,7 +105,7 @@ def lade_sfl(url):
         json_url,
         headers={
             "x-nextjs-data": "1",
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": "Mozilla/5.0"
         },
         timeout=30,
     )
@@ -101,10 +117,14 @@ def lade_sfl(url):
     match_data = data["pageProps"]["matchData"]
 
     # ---------------------------------------------------------
-    # SCHIEDSRICHTER + VAR
+    # SCHIEDSRICHTER / VAR
     # ---------------------------------------------------------
 
-    schiedsrichter, var = lade_offizielle(opta_id)
+    try:
+        schiedsrichter, var = lade_offizielle(opta_id)
+    except Exception:
+        schiedsrichter = ""
+        var = ""
 
     # ---------------------------------------------------------
     # COMMENTARY
@@ -129,13 +149,13 @@ def lade_sfl(url):
         timeout=30,
     )
 
-    commentary = {}
-
     if commentary_response.ok:
         try:
             commentary = commentary_response.json()
         except Exception:
             commentary = {}
+    else:
+        commentary = {}
 
     html = (
         commentary
@@ -166,22 +186,22 @@ def lade_sfl(url):
                 "verletzt": [],
                 "krank": [],
                 "fraglich": [],
-                "nicht_im_kader": [],
+                "nicht_im_kader": []
             }
 
         block = teile[1]
 
         def hole(feld):
 
-            match = re.search(
+            m = re.search(
                 rf"{feld}:\s*(.*)",
                 block
             )
 
-            if not match:
+            if not m:
                 return []
 
-            wert = match.group(1).strip()
+            wert = m.group(1).strip()
 
             if wert in ("", "-", "..."):
                 return []
@@ -197,7 +217,7 @@ def lade_sfl(url):
             "verletzt": hole("Verletzt"),
             "krank": hole("Krank"),
             "fraglich": hole("Fraglich"),
-            "nicht_im_kader": [],
+            "nicht_im_kader": []
         }
 
     # ---------------------------------------------------------
@@ -214,22 +234,16 @@ def lade_sfl(url):
         zeit = zeit[:-1]
 
     if datum:
-
         jahr, monat, tag = datum.split("-")
-
-        datum = (
-            f"{int(tag)}."
-            f"{int(monat)}."
-            f"{jahr}"
-        )
+        datum = f"{int(tag)}.{int(monat)}.{jahr}"
 
     zeit = zeit[:5]
 
     # ---------------------------------------------------------
-    # REPORT
+    # REPORT-DATEN
     # ---------------------------------------------------------
 
-    return {
+    report = {
         "heim": match_data.get(
             "homeTeamName",
             ""
@@ -272,15 +286,17 @@ def lade_sfl(url):
         "heim_letztes_spiel": {
             "gegner": "",
             "resultat": "",
-            "ausgang": "",
+            "ausgang": ""
         },
 
         "gast_letztes_spiel": {
             "gegner": "",
             "resultat": "",
-            "ausgang": "",
-        },
+            "ausgang": ""
+        }
     }
+
+    return report
 
 
 def _sauber(text):
