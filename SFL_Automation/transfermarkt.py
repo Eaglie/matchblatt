@@ -1,49 +1,39 @@
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
-import traceback
 
 
 def lade_transfermarkt(url, teamname=""):
 
-    browser = None
+    html = ""
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
 
-            page = browser.new_page(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/139.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1440, "height": 900},
-            )
+        try:
+            page = browser.new_page()
 
             page.goto(
                 url,
                 wait_until="domcontentloaded",
-                timeout=30000,
+                timeout=60000,
             )
 
-            page.wait_for_load_state("networkidle")
-
+            page.wait_for_timeout(3000)
             html = page.content()
 
-    except Exception:
-        raise Exception(traceback.format_exc())
-
-    finally:
-        if browser:
-            browser.close()
+        finally:
+            # Nicht browser.close() verwenden:
+            # Streamlit + Playwright kann sonst mit
+            # "Event loop is closed!" abbrechen.
+            pass
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -54,6 +44,7 @@ def lade_transfermarkt(url, teamname=""):
     gast_team = gast_box.get_text(strip=True) if gast_box else ""
 
     is_heim = False
+
     if teamname and heim_team and teamname.lower() in heim_team.lower():
         is_heim = True
 
@@ -61,32 +52,44 @@ def lade_transfermarkt(url, teamname=""):
         gegner = gast_team if is_heim else heim_team
     else:
         gegner = ""
+
         titel = soup.select_one("h1")
+
         if titel:
             titel_text = titel.get_text(" ", strip=True)
             match_paar = titel_text.split(",")[0]
+
             if " - " in match_paar:
-                t1, t2 = [x.strip() for x in match_paar.split(" - ", 1)]
+                t1, t2 = [
+                    x.strip()
+                    for x in match_paar.split(" - ", 1)
+                ]
+
                 if teamname.lower() in t1.lower():
                     gegner = t2
                 else:
                     gegner = t1
 
     raw_resultat = ""
+
     score_box = soup.select_one(".sb-core-info")
 
     if score_box:
         for txt in score_box.stripped_strings:
+
             if re.fullmatch(r"\d+:\d+", txt):
                 a, b = map(int, txt.split(":"))
+
                 if a <= 20 and b <= 20:
                     raw_resultat = txt
                     break
 
     if not raw_resultat:
         for txt in soup.stripped_strings:
+
             if re.fullmatch(r"\d+:\d+", txt):
                 a, b = map(int, txt.split(":"))
+
                 if a <= 10 and b <= 10:
                     raw_resultat = txt
                     break
@@ -95,12 +98,16 @@ def lade_transfermarkt(url, teamname=""):
     ausgang = ""
 
     if raw_resultat:
-        h_tore, g_tore = map(int, raw_resultat.split(":"))
+        h_tore, g_tore = map(
+            int,
+            raw_resultat.split(":")
+        )
 
         if is_heim:
             eigenes_resultat = f"{h_tore}:{g_tore}"
             eigene = h_tore
             fremde = g_tore
+
         else:
             eigenes_resultat = f"{g_tore}:{h_tore}"
             eigene = g_tore
@@ -108,14 +115,22 @@ def lade_transfermarkt(url, teamname=""):
 
         if eigene > fremde:
             ausgang = "Sieg"
+
         elif eigene < fremde:
             ausgang = "Niederlage"
+
         else:
             ausgang = "Unentschieden"
 
     formation = ""
+
     text = soup.get_text("\n")
-    m = re.search(r"Startaufstellung:\s*([0-9\- ]+)", text)
+
+    m = re.search(
+        r"Startaufstellung:\s*([0-9\- ]+)",
+        text
+    )
+
     if m:
         formation = m.group(1).strip()
 
@@ -123,28 +138,55 @@ def lade_transfermarkt(url, teamname=""):
 
     if is_heim:
         containers = soup.select(
-            "div.sb-aufstellung-heim div.formation-player-container"
+            "div.sb-aufstellung-heim "
+            "div.formation-player-container"
         )
+
     else:
         containers = soup.select(
-            "div.sb-aufstellung-gast div.formation-player-container"
+            "div.sb-aufstellung-gast "
+            "div.formation-player-container"
         )
 
     if not containers:
-        alle = soup.select("div.formation-player-container")
-        containers = alle[:11] if is_heim else alle[11:]
+        alle = soup.select(
+            "div.formation-player-container"
+        )
+
+        containers = (
+            alle[:11]
+            if is_heim
+            else alle[11:]
+        )
 
     for div in containers:
 
         style = div.get("style", "")
 
-        top = re.search(r"top:\s*([\d.]+)%", style)
-        left = re.search(r"left:\s*([\d.]+)%", style)
+        top = re.search(
+            r"top:\s*([\d.]+)%",
+            style
+        )
 
-        nummer = div.select_one(".tm-shirt-number")
-        name = div.select_one(".formation-number-name")
+        left = re.search(
+            r"left:\s*([\d.]+)%",
+            style
+        )
 
-        if not top or not left or not nummer or not name:
+        nummer = div.select_one(
+            ".tm-shirt-number"
+        )
+
+        name = div.select_one(
+            ".formation-number-name"
+        )
+
+        if (
+            not top
+            or not left
+            or not nummer
+            or not name
+        ):
             continue
 
         spieler.append(
@@ -160,9 +202,16 @@ def lade_transfermarkt(url, teamname=""):
     gesehen = set()
 
     for s in spieler:
-        key = (s["name"], s["x"], s["y"])
+
+        key = (
+            s["name"],
+            s["x"],
+            s["y"],
+        )
+
         if key in gesehen:
             continue
+
         gesehen.add(key)
         eindeutig.append(s)
 
