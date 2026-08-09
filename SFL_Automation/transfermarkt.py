@@ -6,6 +6,8 @@ import traceback
 
 def lade_transfermarkt(url, teamname=""):
 
+    browser = None
+
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -16,14 +18,32 @@ def lade_transfermarkt(url, teamname=""):
                     "--disable-dev-shm-usage",
                 ],
             )
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)
+
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/139.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1440, "height": 900},
+            )
+
+            page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+
+            page.wait_for_load_state("networkidle")
+
             html = page.content()
-            browser.close()
 
     except Exception:
         raise Exception(traceback.format_exc())
+
+    finally:
+        if browser:
+            browser.close()
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -127,12 +147,14 @@ def lade_transfermarkt(url, teamname=""):
         if not top or not left or not nummer or not name:
             continue
 
-        spieler.append({
-            "nummer": nummer.get_text(strip=True),
-            "name": name.get_text(" ", strip=True),
-            "x": float(left.group(1)),
-            "y": float(top.group(1))
-        })
+        spieler.append(
+            {
+                "nummer": nummer.get_text(strip=True),
+                "name": name.get_text(" ", strip=True),
+                "x": float(left.group(1)),
+                "y": float(top.group(1)),
+            }
+        )
 
     eindeutig = []
     gesehen = set()
@@ -153,5 +175,5 @@ def lade_transfermarkt(url, teamname=""):
         "letzter_gegner": gegner,
         "gegner": gegner,
         "ausgang": ausgang,
-        "spieler": spieler
+        "spieler": spieler,
     }
