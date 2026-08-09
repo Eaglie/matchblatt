@@ -13,9 +13,20 @@ st.set_page_config(
 
 st.title("MATCHBLATT")
 
-sfl_url = st.text_input("SFL Matchcenter URL")
-heim_url = st.text_input("Transfermarkt Heim")
-gast_url = st.text_input("Transfermarkt Gast")
+sfl_url = st.text_input(
+    "SFL Matchcenter URL",
+    value="https://sfl.ch/de/match-center/1ljl51o6tne2kfcjop1qutes4"
+)
+
+heim_url = st.text_input(
+    "Transfermarkt Heim",
+    value="https://www.transfermarkt.de/spielbericht/index/spielbericht/4973730"
+)
+
+gast_url = st.text_input(
+    "Transfermarkt Gast",
+    value="https://www.transfermarkt.de/spielbericht/index/spielbericht/4897298"
+)
 
 
 if st.button("MATCHBLATT ERSTELLEN"):
@@ -49,14 +60,11 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 sfl["gast"]
             )
 
-        heim["letzter_gegner"] = sfl["gast"]
-        gast["letzter_gegner"] = sfl["heim"]
-
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
                 sfl,
-                gast,
-                heim
+                heim,
+                gast
             )
 
         report_path = Path("report.html")
