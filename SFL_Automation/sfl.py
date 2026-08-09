@@ -16,13 +16,14 @@ def lade_sfl(url):
         f"?optaId={opta_id}"
     )
 
-    response = requests.get(
-        json_url,
-        headers={
-            "x-nextjs-data": "1",
-            "User-Agent": "Mozilla/5.0"
-        }
-    )
+response = requests.get(
+    json_url,
+    headers={
+        "x-nextjs-data": "1",
+        "User-Agent": "Mozilla/5.0"
+    },
+    timeout=30,
+)
 
     response.raise_for_status()
 
@@ -42,16 +43,28 @@ def lade_sfl(url):
         "-H", "x-account-key: Os-hXumIK",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+result = subprocess.run(
+    cmd,
+    capture_output=True,
+    text=True,
+    timeout=30,
+)
 
+if result.returncode != 0:
+    raise Exception(result.stderr or "Fehler beim Abrufen der SFL-Kommentare.")
+
+try:
     commentary = json.loads(result.stdout)
+except json.JSONDecodeError:
+    commentary = {}
 
-    html = ""
-
-    try:
-        html = commentary["commentary"]["messages"][0]["message"][0]["comment"]
-    except Exception:
-        html = ""
+    html = (
+    commentary
+    .get("commentary", {})
+    .get("messages", [{}])[0]
+    .get("message", [{}])[0]
+    .get("comment", "")
+)
 
     def extrahiere_absenzen(teamname):
 
