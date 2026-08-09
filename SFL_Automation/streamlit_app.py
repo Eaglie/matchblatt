@@ -15,7 +15,10 @@ st.set_page_config(
 st.title("MATCHBLATT")
 
 
-# Eingabemaske – bewusst komplett leer
+# ---------------------------------------------------------
+# EINGABEMASKE
+# ---------------------------------------------------------
+
 sfl_url = st.text_input(
     "SFL Matchcenter URL"
 )
@@ -29,50 +32,95 @@ gast_url = st.text_input(
 )
 
 
+# ---------------------------------------------------------
+# MATCHBLATT ERSTELLEN
+# ---------------------------------------------------------
+
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
+        )
         st.stop()
 
     if not heim_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
+        )
         st.stop()
 
     if not gast_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
+        )
         st.stop()
 
     try:
 
-        with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(sfl_url)
+        # -------------------------------------------------
+        # SFL
+        # -------------------------------------------------
 
-        with st.spinner("Lade Heimteam von Transfermarkt..."):
+        with st.spinner("Lade SFL..."):
+            sfl = lade_sfl(
+                sfl_url.strip()
+            )
+
+        # -------------------------------------------------
+        # HEIMTEAM TRANSFERMARKT
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Heimteam von Transfermarkt..."
+        ):
             heim = lade_transfermarkt(
-                heim_url,
+                heim_url.strip(),
                 sfl["heim"]
             )
 
-        with st.spinner("Lade Gastteam von Transfermarkt..."):
+        # -------------------------------------------------
+        # GASTTEAM TRANSFERMARKT
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Gastteam von Transfermarkt..."
+        ):
             gast = lade_transfermarkt(
-                gast_url,
+                gast_url.strip(),
                 sfl["gast"]
             )
 
-        with st.spinner("Erstelle Matchblatt..."):
+        # -------------------------------------------------
+        # REPORT
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Erstelle Matchblatt..."
+        ):
             erstelle_report(
                 sfl,
                 heim,
                 gast
             )
 
-        report_path = Path("report.html")
+        # -------------------------------------------------
+        # REPORT PRÜFEN
+        # -------------------------------------------------
+
+        report_path = Path(
+            "report.html"
+        )
 
         if not report_path.exists():
             raise FileNotFoundError(
-                "report.html wurde nach der Erstellung nicht gefunden."
+                "report.html wurde nach der Erstellung "
+                "nicht gefunden."
             )
+
+        # -------------------------------------------------
+        # REPORT EINLESEN
+        # -------------------------------------------------
 
         html = report_path.read_text(
             encoding="utf-8"
@@ -82,30 +130,27 @@ if st.button("MATCHBLATT ERSTELLEN"):
             html.encode("utf-8")
         ).decode("ascii")
 
+        report_url = (
+            "data:text/html;base64,"
+            + encoded
+        )
+
+        # -------------------------------------------------
+        # ERFOLG
+        # -------------------------------------------------
+
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        st.markdown(
-            f"""
-            <a
-                href="data:text/html;base64,{encoded}"
-                target="_blank"
-                style="
-                    display:inline-block;
-                    padding:12px 20px;
-                    background:#ffffff;
-                    border:1px solid #999;
-                    border-radius:6px;
-                    text-decoration:none;
-                    color:#222;
-                    font-weight:600;
-                "
-            >
-                MATCHBLATT ÖFFNEN
-            </a>
-            """,
-            unsafe_allow_html=True
+        # -------------------------------------------------
+        # ÖFFNEN
+        # -------------------------------------------------
+
+        st.link_button(
+            "MATCHBLATT ÖFFNEN",
+            report_url,
+            type="secondary"
         )
 
     except Exception as e:
