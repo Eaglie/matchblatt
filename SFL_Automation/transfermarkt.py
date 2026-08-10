@@ -2,6 +2,8 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
 import unicodedata
+from datetime import datetime
+from urllib.parse import urljoin
 
 
 def _normalize_team(name):
@@ -576,6 +578,205 @@ def _extract_players(
     return spieler
 
 
+def _extract_last_match_from_schedule(
+    soup,
+    teamname,
+    current_url
+):
+    """
+    Holt das tatsächlich letzte bereits gespielte Spiel des Teams.
+    Das aktuelle Spiel wird anhand seiner Transfermarkt-Spiel-ID ausgeschlossen.
+    """
+
+    current_match = re.search(
+        r"spielbericht/(\d+)",
+        current_url or ""
+    )
+    current_match_id = (
+        current_match.group(1)
+        if current_match
+        else ""
+    )
+
+    team_link = None
+
+    for a in soup.select("a[href]"):
+        href = a.get("href", "")
+        text = a.get_text(" ", strip=True)
+
+        if "/startseite/verein/" not in href:
+            continue
+
+        if _team_match(teamname, text):
+            team_link = href
+            break
+
+    if not team_link:
+        return None
+
+    id_match = re.search(
+        r"/startseite/verein/(\d+)",
+        team_link
+    )
+    if not id_match:
+        return None
+
+    verein_id = id_match.group(1)
+
+    slug_match = re.search(
+        r"/([^/]+)/startseite/verein/",
+        team_link
+    )
+    if not slug_match:
+        return None
+
+    slug = slug_match.group(1)
+
+    season_match = re.search(
+        r"saison_id/(\d{4})",
+        team_link
+    )
+    saison = (
+        season_match.group(1)
+        if season_match
+        else str(datetime.now().year)
+    )
+
+    schedule_url = (
+        "https://www.transfermarkt.de/"
+        f"{slug}/spielplan/verein/{verein_id}/"
+        f"saison_id/{saison}"
+    )
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                schedule_page = browser.new_page()
+                schedule_page.goto(
+                    schedule_url,
+                    wait_until="domcontentloaded",
+                    timeout=30000
+                )
+                schedule_page.wait_for_load_state(
+                    "domcontentloaded",
+                    timeout=10000
+                )
+                schedule_soup = BeautifulSoup(
+                    schedule_page.content(),
+                    "html.parser"
+                )
+            finally:
+                browser.close()
+    except Exception:
+        return None
+
+    kandidaten = []
+
+    for row in schedule_soup.select("tr"):
+        row_text = row.get_text(" ", strip=True)
+        if not row_text:
+            continue
+
+        if current_match_id:
+            row_ids = re.findall(
+                r"spielbericht/(\d+)",
+                " ".join(
+                    a.get("href", "")
+                    for a in row.select("a[href]")
+                )
+            )
+            if current_match_id in row_ids:
+                continue
+
+        date_match = re.search(
+            r"(\d{2}\.\d{2}\.\d{2,4})",
+            row_text
+        )
+        score_match = re.search(
+            r"(?<!\d)(\d{1,2}:\d{1,2})(?!\d)",
+            row_text
+        )
+
+        if not date_match or not score_match:
+            continue
+
+        date_text = date_match.group(1)
+        date_format = (
+            "%d.%m.%Y"
+            if len(date_text.rsplit(".", 1)[1]) == 4
+            else "%d.%m.%y"
+        )
+
+        try:
+            match_date = datetime.strptime(
+                date_text,
+                date_format
+            )
+        except ValueError:
+            continue
+
+        links = []
+        for a in row.select("a[href]"):
+            href = a.get("href", "")
+            text = a.get_text(" ", strip=True)
+            if "/startseite/verein/" in href and text:
+                links.append(text)
+
+        opponent = ""
+        for text in links:
+            if not _team_match(teamname, text):
+                opponent = text
+                break
+
+        if not opponent:
+            continue
+
+        ha = None
+        for token in re.findall(r"(?<!\w)([HA])(?!\w)", row_text):
+            ha = token
+            break
+
+        if ha not in ("H", "A"):
+            continue
+
+        a, b = map(
+            int,
+            score_match.group(1).split(":")
+        )
+
+        if ha == "H":
+            eigenes = f"{a}:{b}"
+            eigene_tore, fremde_tore = a, b
+        else:
+            eigenes = f"{b}:{a}"
+            eigene_tore, fremde_tore = b, a
+
+        if eigene_tore > fremde_tore:
+            ausgang = "Sieg"
+        elif eigene_tore < fremde_tore:
+            ausgang = "Niederlage"
+        else:
+            ausgang = "Unentschieden"
+
+        kandidaten.append({
+            "datum": match_date,
+            "resultat": eigenes,
+            "gegner": opponent,
+            "ausgang": ausgang,
+        })
+
+    if not kandidaten:
+        return None
+
+    kandidaten.sort(
+        key=lambda x: x["datum"],
+        reverse=True
+    )
+
+    return kandidaten[0]
+
+
 def lade_transfermarkt(
     url,
     teamname=""
@@ -742,6 +943,24 @@ def lade_transfermarkt(
         is_heim,
         teamname
     )
+
+    # ---------------------------------------------------------
+    # LETZTES SPIEL
+    # ---------------------------------------------------------
+    # Die Startaufstellung kommt weiterhin aus der eingegebenen
+    # Transfermarkt-Spielseite. Für "Letztes Spiel" darf diese
+    # Seite aber nicht verwendet werden, weil sie das aktuelle
+    # Spiel bzw. die aktuelle Begegnung beschreibt.
+    letztes_spiel = _extract_last_match_from_schedule(
+        soup,
+        teamname,
+        url
+    )
+
+    if letztes_spiel:
+        eigenes_resultat = letztes_spiel["resultat"]
+        gegner = letztes_spiel["gegner"]
+        ausgang = letztes_spiel["ausgang"]
 
     # ---------------------------------------------------------
     # ABSCHLIESSENDE SICHERHEITSPRÜFUNGEN
