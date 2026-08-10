@@ -1,6 +1,6 @@
 import streamlit as st
-from pathlib import Path
 import streamlit.components.v1 as components
+from pathlib import Path
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -13,6 +13,7 @@ st.set_page_config(
 )
 
 st.title("MATCHBLATT")
+
 
 sfl_url = st.text_input("SFL Matchcenter URL")
 heim_url = st.text_input("Transfermarkt Heim")
@@ -33,10 +34,12 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
         st.stop()
 
+
     try:
 
         with st.spinner("Lade SFL..."):
             sfl = lade_sfl(sfl_url)
+
 
         with st.spinner("Lade Heimteam von Transfermarkt..."):
             heim = lade_transfermarkt(
@@ -44,40 +47,49 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 sfl["heim"]
             )
 
+
         with st.spinner("Lade Gastteam von Transfermarkt..."):
             gast = lade_transfermarkt(
                 gast_url,
                 sfl["gast"]
             )
 
+
         heim["letzter_gegner"] = sfl["gast"]
         gast["letzter_gegner"] = sfl["heim"]
+
 
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
                 sfl,
-                heim,
-                gast
+                gast,
+                heim
             )
 
+
         report_path = Path("report.html")
+
 
         if not report_path.exists():
             raise FileNotFoundError(
                 "report.html wurde nach der Erstellung nicht gefunden."
             )
 
+
         html = report_path.read_text(
             encoding="utf-8"
         )
 
+
         st.success("✅ Matchblatt erfolgreich erstellt.")
+
 
         components.html(
             html,
             height=3000,
             scrolling=True
         )
+
 
     except Exception as e:
 
