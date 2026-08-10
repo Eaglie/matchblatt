@@ -3,14 +3,12 @@ import streamlit.components.v1 as components
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-
 st.set_page_config(
     page_title="Matchblatt",
     layout="wide"
 )
 
 st.title("MATCHBLATT")
-
 
 sfl_url = st.text_input("SFL Matchcenter URL")
 heim_url = st.text_input("Transfermarkt Heim")
@@ -46,10 +44,19 @@ if st.button("MATCHBLATT ERSTELLEN"):
     try:
         from report import erstelle_report
 
-        progress = st.progress(0, text="Lade SFL...")
+        progress = st.progress(
+            0,
+            text="Lade SFL..."
+        )
 
-        sfl = lade_sfl_cached(sfl_url.strip())
-        progress.progress(25, text="SFL geladen – Transfermarkt wird geladen...")
+        sfl = lade_sfl_cached(
+            sfl_url.strip()
+        )
+
+        progress.progress(
+            25,
+            text="SFL geladen – Transfermarkt wird geladen..."
+        )
 
         # Heim und Gast gleichzeitig laden.
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -67,14 +74,26 @@ if st.button("MATCHBLATT ERSTELLEN"):
             )
 
             heim = future_heim.result()
-            progress.progress(62, text="Heimteam geladen – Gastteam wird fertig geladen...")
+
+            progress.progress(
+                62,
+                text="Heimteam geladen – Gastteam wird fertig geladen..."
+            )
 
             gast = future_gast.result()
 
-        progress.progress(80, text="Erstelle Matchblatt...")
+        progress.progress(
+            80,
+            text="Erstelle Matchblatt..."
+        )
 
-        heim["letzter_gegner"] = sfl["gast"]
-        gast["letzter_gegner"] = sfl["heim"]
+        # WICHTIG:
+        # Die von Transfermarkt gelieferten Daten für
+        # "letzter_gegner" und "resultat" NICHT überschreiben.
+        #
+        # NICHT:
+        # heim["letzter_gegner"] = sfl["gast"]
+        # gast["letzter_gegner"] = sfl["heim"]
 
         erstelle_report(
             sfl,
@@ -82,7 +101,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
             gast
         )
 
-        report_path = Path("report.html")
+        report_path = Path(
+            "report.html"
+        )
 
         if not report_path.exists():
             raise FileNotFoundError(
@@ -98,9 +119,14 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html ist leer."
             )
 
-        progress.progress(100, text="Matchblatt fertig.")
+        progress.progress(
+            100,
+            text="Matchblatt fertig."
+        )
 
-        st.success("✅ Matchblatt erfolgreich erstellt.")
+        st.success(
+            "✅ Matchblatt erfolgreich erstellt."
+        )
 
         components.html(
             html,
@@ -109,5 +135,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
         )
 
     except Exception as e:
-        st.error("❌ Fehler beim Erstellen des Matchblatts.")
+
+        st.error(
+            "❌ Fehler beim Erstellen des Matchblatts."
+        )
+
         st.exception(e)
