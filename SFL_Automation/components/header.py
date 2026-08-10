@@ -12,18 +12,18 @@ def header(
 ):
 
     return f"""
-<div class="title">
+<div class="header">
 
-    <h1>
-        {heim.upper()} – {gast.upper()}
-    </h1>
+    <div class="title">
 
-    <div style="color:#ffffff; text-transform:uppercase;">
-        SCHIEDSRICHTER: {schiedsrichter.upper()}
-    </div>
+        <h1>
+            {heim.upper()} – {gast.upper()}
+        </h1>
 
-    <div style="color:#ffffff; text-transform:uppercase;">
-        VAR: {var.upper()}
+  <h2>
+    {stadion} • <span class="header_label">Schiedsrichter:</span> <span class="header_value" style="color:#ffffff;">{schiedsrichter.upper()}</span> • <span class="header_label">VAR:</span> <span class="header_value" style="color:#ffffff;">{var.upper()}</span>
+</h2>
+
     </div>
 
 </div>
