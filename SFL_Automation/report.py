@@ -18,6 +18,8 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .absence{width:100%;border-collapse:collapse;margin:0;font-size:15px;}
 .absence td{border:1px solid #d9dee5;padding:6px 10px;height:30px;font-size:11px;font-weight:700;line-height:1.25;color:#111;vertical-align:top;}
 .absence td:first-child{width:105px;background:#fafbfc;color:#555;font-size:13px;font-weight:600;}
+.absence td:nth-child(2){white-space:normal;overflow-wrap:anywhere;word-break:normal;}
+.absence_name{display:block;white-space:normal;line-height:1.25;}
 .team{margin-top:12px;border:1px solid #dfe5ec;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);}
 .team_head{display:flex;align-items:center;width:100%;background:#17233f;border-radius:10px 10px 0 0;overflow:hidden;margin-bottom:0;white-space:nowrap;font-family:Arial,Helvetica,sans-serif;}
 .team_name{flex:1;background:#17233f;color:#fff;padding:10px 16px;font-size:18px;font-weight:700;text-align:left;}
@@ -136,7 +138,12 @@ def absence_table_html(absences):
                 if part.strip()
             )
 
-        return "<br>".join(html.escape(x) for x in names)
+        # Jeden Namen als eigenes Block-Element ausgeben.
+        # Damit bleibt die Zeilentrennung auch in Streamlit garantiert erhalten.
+        return "".join(
+            f'<div class="absence_name">{html.escape(x)}</div>'
+            for x in names
+        )
 
     return f'''
 <table class="absence">
