@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
 
-
 st.set_page_config(
     page_title="Matchblatt",
     layout="wide"
@@ -10,13 +9,34 @@ st.set_page_config(
 
 st.title("MATCHBLATT")
 
-
 sfl_url = st.text_input("SFL Matchcenter URL")
 heim_url = st.text_input("Transfermarkt Heim")
 gast_url = st.text_input("Transfermarkt Gast")
 
 
-if st.button("MATCHBLATT ERSTELLEN"):
+@st.cache_data(ttl=300, show_spinner=False)
+def lade_sfl_cached(url):
+    from sfl import lade_sfl
+    return lade_sfl(url)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def lade_tm_cached(url, teamname):
+    from transfermarkt import lade_transfermarkt
+    return lade_transfermarkt(url, teamname)
+
+
+# Formular statt normalem st.button:
+# Dadurch wird der Start eindeutig mit EINEM Submit ausgelöst.
+with st.form("matchblatt_form", clear_on_submit=False):
+
+    starten = st.form_submit_button(
+        "MATCHBLATT ERSTELLEN",
+        use_container_width=False
+    )
+
+
+if starten:
 
     if not sfl_url.strip():
         st.error("Bitte die SFL Matchcenter URL eingeben.")
@@ -31,35 +51,50 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.stop()
 
     try:
-        # Die schweren Module erst beim Button-Klick laden.
-        from sfl import lade_sfl
-        from transfermarkt import lade_transfermarkt
         from report import erstelle_report
 
-        with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(sfl_url.strip())
+        progress = st.progress(
+            0,
+            text="Lade SFL..."
+        )
 
-        with st.spinner("Lade Heimteam von Transfermarkt..."):
-            heim = lade_transfermarkt(
-                heim_url.strip(),
-                sfl["heim"]
-            )
+        sfl = lade_sfl_cached(
+            sfl_url.strip()
+        )
 
-        with st.spinner("Lade Gastteam von Transfermarkt..."):
-            gast = lade_transfermarkt(
-                gast_url.strip(),
-                sfl["gast"]
-            )
+        progress.progress(
+            25,
+            text="SFL geladen – lade Heimteam..."
+        )
 
-        heim["letzter_gegner"] = sfl["gast"]
-        gast["letzter_gegner"] = sfl["heim"]
+        heim = lade_tm_cached(
+            heim_url.strip(),
+            sfl["heim"]
+        )
 
-        with st.spinner("Erstelle Matchblatt..."):
-            erstelle_report(
-                sfl,
-                heim,
-                gast
-            )
+        progress.progress(
+            60,
+            text="Heimteam geladen – lade Gastteam..."
+        )
+
+        gast = lade_tm_cached(
+            gast_url.strip(),
+            sfl["gast"]
+        )
+
+        progress.progress(
+            85,
+            text="Erstelle Matchblatt..."
+        )
+
+        # Transfermarkt liefert bereits das tatsächliche
+        # letzte Spiel inklusive Gegner und Resultat.
+        # Diese Daten NICHT mit dem aktuellen SFL-Gegner überschreiben.
+        erstelle_report(
+            sfl,
+            heim,
+            gast
+        )
 
         report_path = Path("report.html")
 
@@ -77,11 +112,15 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html ist leer."
             )
 
-        st.success("✅ Matchblatt erfolgreich erstellt.")
+        progress.progress(
+            100,
+            text="Matchblatt fertig."
+        )
 
-        # Das komplette HTML-Dokument wird in einem echten
-        # HTML-Iframe gerendert. Kein st.markdown(), damit
-        # <style> nicht als sichtbarer CSS-Text erscheint.
+        st.success(
+            "✅ Matchblatt erfolgreich erstellt."
+        )
+
         components.html(
             html,
             height=1900,
@@ -89,5 +128,7 @@ if st.button("MATCHBLATT ERSTELLEN"):
         )
 
     except Exception as e:
-        st.error("❌ Fehler beim Erstellen des Matchblatts.")
+        st.error(
+            "❌ Fehler beim Erstellen des Matchblatts."
+        )
         st.exception(e)
