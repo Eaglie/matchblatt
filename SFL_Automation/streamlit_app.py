@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from pathlib import Path
 
 from sfl import lade_sfl
@@ -12,34 +11,56 @@ st.set_page_config(
     layout="wide"
 )
 
+
 st.title("MATCHBLATT")
 
 
-sfl_url = st.text_input("SFL Matchcenter URL")
-heim_url = st.text_input("Transfermarkt Heim")
-gast_url = st.text_input("Transfermarkt Gast")
+sfl_url = st.text_input(
+    "SFL Matchcenter URL"
+)
+
+heim_url = st.text_input(
+    "Transfermarkt Heim"
+)
+
+gast_url = st.text_input(
+    "Transfermarkt Gast"
+)
 
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
+        )
         st.stop()
 
     if not heim_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
+        )
         st.stop()
 
     if not gast_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
+        )
         st.stop()
 
-
     try:
+
+        # -------------------------------------------------
+        # SFL
+        # -------------------------------------------------
 
         with st.spinner("Lade SFL..."):
             sfl = lade_sfl(sfl_url)
 
+
+        # -------------------------------------------------
+        # TRANSFERMARKT HEIM
+        # -------------------------------------------------
 
         with st.spinner("Lade Heimteam von Transfermarkt..."):
             heim = lade_transfermarkt(
@@ -48,6 +69,10 @@ if st.button("MATCHBLATT ERSTELLEN"):
             )
 
 
+        # -------------------------------------------------
+        # TRANSFERMARKT GAST
+        # -------------------------------------------------
+
         with st.spinner("Lade Gastteam von Transfermarkt..."):
             gast = lade_transfermarkt(
                 gast_url,
@@ -55,11 +80,20 @@ if st.button("MATCHBLATT ERSTELLEN"):
             )
 
 
+        # -------------------------------------------------
+        # LETZTER GEGNER
+        # -------------------------------------------------
+
         heim["letzter_gegner"] = sfl["gast"]
         gast["letzter_gegner"] = sfl["heim"]
 
 
+        # -------------------------------------------------
+        # REPORT ERSTELLEN
+        # -------------------------------------------------
+
         with st.spinner("Erstelle Matchblatt..."):
+
             erstelle_report(
                 sfl,
                 gast,
@@ -67,8 +101,11 @@ if st.button("MATCHBLATT ERSTELLEN"):
             )
 
 
-        report_path = Path("report.html")
+        # -------------------------------------------------
+        # REPORT LESEN
+        # -------------------------------------------------
 
+        report_path = Path("report.html")
 
         if not report_path.exists():
             raise FileNotFoundError(
@@ -81,17 +118,26 @@ if st.button("MATCHBLATT ERSTELLEN"):
         )
 
 
-        st.success("✅ Matchblatt erfolgreich erstellt.")
+        # -------------------------------------------------
+        # MATCHBLATT DIREKT ANZEIGEN
+        #
+        # KEIN iframe
+        # KEIN components.html
+        # KEIN base64
+        # KEIN window.open
+        # -------------------------------------------------
 
-
-        components.html(
-            html,
-            height=3000,
-            scrolling=True
+        st.success(
+            "✅ Matchblatt erfolgreich erstellt."
         )
+
+        st.html(html)
 
 
     except Exception as e:
 
-        st.error("❌ Fehler beim Erstellen des Matchblatts.")
+        st.error(
+            "❌ Fehler beim Erstellen des Matchblatts."
+        )
+
         st.exception(e)
