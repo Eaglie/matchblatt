@@ -97,7 +97,7 @@ if st.button("MATCHBLATT ERSTELLEN"):
         )
 
         st.iframe(
-            "/app/static/report.html",
+            Path("static/report.html"),
             height=3000
         )
 
