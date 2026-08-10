@@ -101,7 +101,9 @@ def team_block(teamname, daten, absenzen):
 
 def erstelle_report(sfl, heim, gast):
     html = f"""
+<style>
 {CSS}
+</style>
 
 {header(
     heim.get("logo", ""),
@@ -129,7 +131,6 @@ def erstelle_report(sfl, heim, gast):
     gast,
     sfl.get("gast_abwesend", {})
 )}
-
 """
 
     Path("report.html").write_text(
