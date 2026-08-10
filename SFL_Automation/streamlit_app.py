@@ -1,6 +1,5 @@
 import streamlit as st
 from pathlib import Path
-import streamlit.components.v1 as components
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -28,8 +27,8 @@ gast_url = st.text_input(
 )
 
 
-if "report_html" not in st.session_state:
-    st.session_state["report_html"] = None
+if "report_ready" not in st.session_state:
+    st.session_state["report_ready"] = False
 
 
 if st.button("MATCHBLATT ERSTELLEN"):
@@ -79,7 +78,6 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nicht erstellt."
             )
 
-        # Matchblatt als statische Datei ablegen
         static_dir = Path(".streamlit/static")
         static_dir.mkdir(
             parents=True,
@@ -101,20 +99,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # Neue Seite in neuem Tab öffnen
-        components.html(
-            """
-            <script>
-                window.open(
-                    '/app/static/report.html',
-                    '_blank'
-                );
-            </script>
-            """,
-            height=0
-        )
-
     except Exception as e:
+
+        st.session_state["report_ready"] = False
 
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
@@ -123,23 +110,9 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.exception(e)
 
 
-if st.session_state.get("report_ready"):
+if st.session_state["report_ready"]:
 
-    st.markdown(
-        """
-        <a href="/app/static/report.html"
-           target="_blank"
-           style="
-               display:inline-block;
-               padding:10px 18px;
-               background:#163b76;
-               color:white;
-               text-decoration:none;
-               border-radius:6px;
-               font-weight:bold;
-           ">
-           MATCHBLATT IN NEUEM TAB ÖFFNEN
-        </a>
-        """,
-        unsafe_allow_html=True
+    st.link_button(
+        "MATCHBLATT IN NEUEM TAB ÖFFNEN",
+        "/app/static/report.html"
     )
