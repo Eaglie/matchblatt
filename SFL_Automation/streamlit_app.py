@@ -49,15 +49,17 @@ if st.button("MATCHBLATT ERSTELLEN"):
     try:
 
         with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(sfl_url.strip())
+            sfl = lade_sfl(
+                sfl_url.strip()
+            )
 
-        with st.spinner("Lade Heimteam von Transfermarkt..."):
+        with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
                 heim_url.strip(),
                 sfl["heim"]
             )
 
-        with st.spinner("Lade Gastteam von Transfermarkt..."):
+        with st.spinner("Lade Gastteam..."):
             gast = lade_transfermarkt(
                 gast_url.strip(),
                 sfl["gast"]
@@ -77,19 +79,42 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nicht erstellt."
             )
 
-        html = report_path.read_text(
+        # Matchblatt als statische Datei ablegen
+        static_dir = Path(".streamlit/static")
+        static_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        static_report = static_dir / "report.html"
+
+        static_report.write_text(
+            report_path.read_text(
+                encoding="utf-8"
+            ),
             encoding="utf-8"
         )
 
-        st.session_state["report_html"] = html
+        st.session_state["report_ready"] = True
 
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-    except Exception as e:
+        # Neue Seite in neuem Tab öffnen
+        components.html(
+            """
+            <script>
+                window.open(
+                    '/app/static/report.html',
+                    '_blank'
+                );
+            </script>
+            """,
+            height=0
+        )
 
-        st.session_state["report_html"] = None
+    except Exception as e:
 
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
@@ -98,10 +123,23 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.exception(e)
 
 
-if st.session_state["report_html"]:
+if st.session_state.get("report_ready"):
 
-    components.html(
-        st.session_state["report_html"],
-        height=1800,
-        scrolling=True
+    st.markdown(
+        """
+        <a href="/app/static/report.html"
+           target="_blank"
+           style="
+               display:inline-block;
+               padding:10px 18px;
+               background:#163b76;
+               color:white;
+               text-decoration:none;
+               border-radius:6px;
+               font-weight:bold;
+           ">
+           MATCHBLATT IN NEUEM TAB ÖFFNEN
+        </a>
+        """,
+        unsafe_allow_html=True
     )
