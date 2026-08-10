@@ -1,6 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from pathlib import Path
+
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -12,49 +12,102 @@ st.set_page_config(
     layout="wide"
 )
 
+
 st.title("MATCHBLATT")
 
 
-sfl_url = st.text_input("SFL Matchcenter URL")
-heim_url = st.text_input("Transfermarkt Heim")
-gast_url = st.text_input("Transfermarkt Gast")
+sfl_url = st.text_input(
+    "SFL Matchcenter URL"
+)
+
+heim_url = st.text_input(
+    "Transfermarkt Heim"
+)
+
+gast_url = st.text_input(
+    "Transfermarkt Gast"
+)
 
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
+        )
         st.stop()
+
 
     if not heim_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
+        )
         st.stop()
 
+
     if not gast_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
+        )
         st.stop()
+
 
     try:
 
-        with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(sfl_url)
+        # -------------------------------------------------
+        # SFL LADEN
+        # -------------------------------------------------
 
-        with st.spinner("Lade Heimteam von Transfermarkt..."):
+        with st.spinner("Lade SFL..."):
+
+            sfl = lade_sfl(
+                sfl_url
+            )
+
+
+        # -------------------------------------------------
+        # HEIMTEAM LADEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Heimteam von Transfermarkt..."
+        ):
+
             heim = lade_transfermarkt(
                 heim_url,
                 sfl["heim"]
             )
 
-        with st.spinner("Lade Gastteam von Transfermarkt..."):
+
+        # -------------------------------------------------
+        # GASTTEAM LADEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Gastteam von Transfermarkt..."
+        ):
+
             gast = lade_transfermarkt(
                 gast_url,
                 sfl["gast"]
             )
 
+
+        # -------------------------------------------------
+        # LETZTER GEGNER
+        # -------------------------------------------------
+
         heim["letzter_gegner"] = sfl["gast"]
         gast["letzter_gegner"] = sfl["heim"]
 
-        with st.spinner("Erstelle Matchblatt..."):
+
+        # -------------------------------------------------
+        # MATCHBLATT ERSTELLEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Erstelle Matchblatt..."
+        ):
 
             erstelle_report(
                 sfl,
@@ -62,103 +115,130 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 gast
             )
 
-        report_path = Path("report.html")
+
+        # -------------------------------------------------
+        # ERZEUGTE HTML-DATEI LESEN
+        # -------------------------------------------------
+
+        report_path = Path(
+            "report.html"
+        )
+
 
         if not report_path.exists():
+
             raise FileNotFoundError(
                 "report.html wurde nicht erstellt."
             )
+
 
         html = report_path.read_text(
             encoding="utf-8"
         )
 
-        # CSS aus dem fertigen Report holen
-        css_start = html.find("<style>")
-        css_end = html.find("</style>")
 
-        if css_start == -1 or css_end == -1:
+        # -------------------------------------------------
+        # CSS AUS REPORT HOLEN
+        # -------------------------------------------------
+
+        style_start = html.find(
+            "<style>"
+        )
+
+        style_end = html.find(
+            "</style>"
+        )
+
+
+        if style_start == -1 or style_end == -1:
+
             raise ValueError(
-                "CSS im report.html nicht gefunden."
+                "CSS aus report.html konnte nicht gelesen werden."
             )
+
 
         css = html[
-            css_start + len("<style>"):
-            css_end
+            style_start + len("<style>"):
+            style_end
         ]
 
-        # Den bereits fertigen .page-Block unverändert übernehmen
-        page_start = html.find('<div class="page">')
 
-        if page_start == -1:
+        # -------------------------------------------------
+        # BODY-INHALT HOLEN
+        # -------------------------------------------------
+
+        body_start = html.find(
+            "<body"
+        )
+
+        body_start = html.find(
+            ">",
+            body_start
+        )
+
+
+        body_end = html.rfind(
+            "</body>"
+        )
+
+
+        if body_start == -1 or body_end == -1:
+
             raise ValueError(
-                'Der Bereich <div class="page"> wurde nicht gefunden.'
+                "Inhalt aus report.html konnte nicht gelesen werden."
             )
 
-        page_end = html.rfind("</div>")
 
-        if page_end == -1 or page_end <= page_start:
-            raise ValueError(
-                "Der Matchblatt-Container konnte nicht gefunden werden."
-            )
-
-        page = html[
-            page_start:
-            page_end + len("</div>")
+        body = html[
+            body_start + 1:
+            body_end
         ]
 
-        # Eigenständige Darstellung für Streamlit
-        embedded_html = f"""
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
 
-<style>
-
-{css}
-
-/* Streamlit-Darstellung */
-html,
-body {{
-    margin: 0;
-    padding: 0;
-    background: transparent;
-}}
-
-body {{
-    width: 100%;
-    overflow-x: hidden;
-}}
-
-.page {{
-    width: 210mm;
-    margin: 8px auto;
-    transform: scale(0.72);
-    transform-origin: top center;
-}}
-
-</style>
-
-</head>
-
-<body>
-
-{page}
-
-</body>
-</html>
-"""
+        # -------------------------------------------------
+        # MATCHBLATT DIREKT IN STREAMLIT
+        # -------------------------------------------------
 
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        components.html(
-            embedded_html,
-            height=1250,
-            scrolling=True
+
+        st.markdown(
+            f"""
+<style>
+
+{css}
+
+/* ---------------------------------------------
+   STREAMLIT MATCHBLATT
+   --------------------------------------------- */
+
+.matchblatt_container {{
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-top: 8px;
+    padding-bottom: 20px;
+}}
+
+.matchblatt_container .page {{
+    zoom: 0.72;
+    margin-left: auto;
+    margin-right: auto;
+}}
+
+</style>
+
+<div class="matchblatt_container">
+
+{body}
+
+</div>
+""",
+            unsafe_allow_html=True
         )
+
 
     except Exception as e:
 
