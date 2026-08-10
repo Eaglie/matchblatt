@@ -96,10 +96,15 @@ if st.button("MATCHBLATT ERSTELLEN"):
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        st.iframe(
-            Path("static/report.html"),
-            height=3000
-        )
+        html_content = report_path.read_text(
+            encoding="utf-8"
+)
+
+ components.html(
+     html_content,
+     height=3000,
+     scrolling=True
+)
 
     except Exception as e:
 
