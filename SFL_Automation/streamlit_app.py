@@ -1,7 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
-import re
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -59,46 +58,56 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
             erstelle_report(
                 sfl,
-                gast,
-                heim
+                heim,
+                gast
             )
 
         report_path = Path("report.html")
 
         if not report_path.exists():
             raise FileNotFoundError(
-                "report.html wurde nach der Erstellung nicht gefunden."
+                "report.html wurde nicht erstellt."
             )
 
         html = report_path.read_text(
             encoding="utf-8"
         )
 
-        style_match = re.search(
-            r"<style[^>]*>(.*?)</style>",
-            html,
-            re.DOTALL | re.IGNORECASE
-        )
+        # CSS aus dem fertigen Report holen
+        css_start = html.find("<style>")
+        css_end = html.find("</style>")
 
-        body_match = re.search(
-            r"<body[^>]*>(.*?)</body>",
-            html,
-            re.DOTALL | re.IGNORECASE
-        )
-
-        if not style_match:
+        if css_start == -1 or css_end == -1:
             raise ValueError(
-                "CSS konnte aus report.html nicht gelesen werden."
+                "CSS im report.html nicht gefunden."
             )
 
-        if not body_match:
+        css = html[
+            css_start + len("<style>"):
+            css_end
+        ]
+
+        # Den bereits fertigen .page-Block unverändert übernehmen
+        page_start = html.find('<div class="page">')
+
+        if page_start == -1:
             raise ValueError(
-                "Body konnte aus report.html nicht gelesen werden."
+                'Der Bereich <div class="page"> wurde nicht gefunden.'
             )
 
-        css = style_match.group(1)
-        body = body_match.group(1)
+        page_end = html.rfind("</div>")
 
+        if page_end == -1 or page_end <= page_start:
+            raise ValueError(
+                "Der Matchblatt-Container konnte nicht gefunden werden."
+            )
+
+        page = html[
+            page_start:
+            page_end + len("</div>")
+        ]
+
+        # Eigenständige Darstellung für Streamlit
         embedded_html = f"""
 <!DOCTYPE html>
 <html lang="de">
@@ -109,6 +118,7 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
 {css}
 
+/* Streamlit-Darstellung */
 html,
 body {{
     margin: 0;
@@ -122,12 +132,10 @@ body {{
 }}
 
 .page {{
-    transform: scale(0.78);
-    transform-origin: top left;
-
-    margin: 10px 0 0 0;
-
     width: 210mm;
+    margin: 8px auto;
+    transform: scale(0.72);
+    transform-origin: top center;
 }}
 
 </style>
@@ -136,7 +144,7 @@ body {{
 
 <body>
 
-{body}
+{page}
 
 </body>
 </html>
@@ -148,7 +156,7 @@ body {{
 
         components.html(
             embedded_html,
-            height=1900,
+            height=1250,
             scrolling=True
         )
 
