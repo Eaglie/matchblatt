@@ -28,6 +28,10 @@ gast_url = st.text_input(
 )
 
 
+if "report_html" not in st.session_state:
+    st.session_state["report_html"] = None
+
+
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
@@ -77,20 +81,27 @@ if st.button("MATCHBLATT ERSTELLEN"):
             encoding="utf-8"
         )
 
+        st.session_state["report_html"] = html
+
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        components.html(
-            html,
-            height=1800,
-            scrolling=True
-        )
-
     except Exception as e:
+
+        st.session_state["report_html"] = None
 
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
         )
 
         st.exception(e)
+
+
+if st.session_state["report_html"]:
+
+    components.html(
+        st.session_state["report_html"],
+        height=1800,
+        scrolling=True
+    )
