@@ -34,17 +34,23 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.stop()
 
     if not heim_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
+        )
         st.stop()
 
     if not gast_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
+        )
         st.stop()
 
     try:
 
         with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(sfl_url.strip())
+            sfl = lade_sfl(
+                sfl_url.strip()
+            )
 
         with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
@@ -78,8 +84,7 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
         st.iframe(
             report_path,
-            height=1800,
-            scrolling=True
+            height=2200
         )
 
     except Exception as e:
