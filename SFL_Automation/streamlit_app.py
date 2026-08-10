@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from pathlib import Path
 
 from sfl import lade_sfl
@@ -50,39 +49,27 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
     try:
 
-        # ---------------------------------------------
         # SFL laden
-        # ---------------------------------------------
-
         with st.spinner("Lade SFL..."):
             sfl = lade_sfl(
                 sfl_url.strip()
             )
 
-        # ---------------------------------------------
-        # Heimteam Transfermarkt
-        # ---------------------------------------------
-
+        # Heimteam laden
         with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
                 heim_url.strip(),
                 sfl["heim"]
             )
 
-        # ---------------------------------------------
-        # Gastteam Transfermarkt
-        # ---------------------------------------------
-
+        # Gastteam laden
         with st.spinner("Lade Gastteam..."):
             gast = lade_transfermarkt(
                 gast_url.strip(),
                 sfl["gast"]
             )
 
-        # ---------------------------------------------
         # Matchblatt erstellen
-        # ---------------------------------------------
-
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
                 sfl,
@@ -90,13 +77,8 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 gast
             )
 
-        # ---------------------------------------------
-        # HTML einlesen
-        # ---------------------------------------------
-
-        report_path = Path(
-            "report.html"
-        )
+        # Erzeugtes HTML prüfen
+        report_path = Path("report.html")
 
         if not report_path.exists():
             raise FileNotFoundError(
@@ -111,15 +93,8 @@ if st.button("MATCHBLATT ERSTELLEN"):
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # ---------------------------------------------
-        # Matchblatt direkt unterhalb anzeigen
-        # ---------------------------------------------
-
-        components.html(
-            html,
-            height=1800,
-            scrolling=True
-        )
+        # Matchblatt direkt auf der Seite anzeigen
+        st.html(html)
 
     except Exception as e:
 
