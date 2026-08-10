@@ -1,6 +1,5 @@
 import streamlit as st
 from pathlib import Path
-import streamlit.components.v1 as components
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -11,7 +10,6 @@ st.set_page_config(
     page_title="Matchblatt",
     layout="wide"
 )
-
 
 st.title("MATCHBLATT")
 
@@ -29,6 +27,10 @@ gast_url = st.text_input(
 )
 
 
+if "report_ready" not in st.session_state:
+    st.session_state["report_ready"] = False
+
+
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
@@ -36,15 +38,11 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.stop()
 
     if not heim_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Heimteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
         st.stop()
 
     if not gast_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Gastteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
         st.stop()
 
     try:
@@ -80,24 +78,41 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nicht erstellt."
             )
 
+        static_dir = Path(".streamlit/static")
+        static_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        static_report = static_dir / "report.html"
+
+        static_report.write_text(
+            report_path.read_text(
+                encoding="utf-8"
+            ),
+            encoding="utf-8"
+        )
+
+        st.session_state["report_ready"] = True
+
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        html_content = report_path.read_text(
-            encoding="utf-8"
-        )
-
-        components.html(
-            html_content,
-            height=2200,
-            scrolling=True
-        )
-
     except Exception as e:
+
+        st.session_state["report_ready"] = False
 
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
         )
 
         st.exception(e)
+
+
+if st.session_state["report_ready"]:
+
+    st.link_button(
+        "MATCHBLATT IN NEUEM TAB ÖFFNEN",
+        "/app/static/report.html"
+    )
