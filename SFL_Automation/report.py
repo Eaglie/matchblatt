@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from components.css import CSS
 from components.scorebar import scorebar
 from components.pitch import pitch
@@ -24,25 +23,17 @@ def absence_table_html(absences):
 def parse_val(val):
     if val is None:
         return None
-
     if isinstance(val, (int, float)):
         return float(val)
-
     if isinstance(val, str):
-        cleaned = "".join(
-            c for c in val
-            if c.isdigit() or c in ".-"
-        )
-
+        cleaned = "".join(c for c in val if c.isdigit() or c in ".-")
         if cleaned:
             return float(cleaned)
-
     return None
 
 
 def adjust_left(val):
     n = parse_val(val)
-
     if n is None:
         return val
 
@@ -52,7 +43,6 @@ def adjust_left(val):
 
 def adjust_top(val):
     n = parse_val(val)
-
     if n is None:
         return val
 
@@ -68,124 +58,89 @@ def team_block(teamname, daten, absenzen):
     spieler = []
 
     for s in raw_spieler:
-
         if isinstance(s, dict):
-
             s_copy = s.copy()
-
-            orig_left = s_copy.get(
-                "_orig_left",
-                s_copy.get(
-                    "left",
-                    s_copy.get("x")
-                )
-            )
-
-            orig_top = s_copy.get(
-                "_orig_top",
-                s_copy.get(
-                    "top",
-                    s_copy.get("y")
-                )
-            )
+            orig_left = s_copy.get("_orig_left", s_copy.get("left", s_copy.get("x")))
+            orig_top = s_copy.get("_orig_top", s_copy.get("top", s_copy.get("y")))
 
             s_copy["_orig_left"] = orig_left
             s_copy["_orig_top"] = orig_top
 
-            s_copy["left"] = adjust_left(
-                orig_left
-            )
-
-            s_copy["top"] = adjust_top(
-                orig_top
-            )
-
+            s_copy["left"] = adjust_left(orig_left)
+            s_copy["top"] = adjust_top(orig_top)
             spieler.append(s_copy)
 
     return f"""
-<div style="display:flex; flex-direction:column;">
-    {draw_pitch(spieler)}
+<div class="team">
+{scorebar(
+    teamname,
+    logo,
+    resultat,
+    daten.get("letzter_gegner", "")
+)}
+
+<div class="team_body">
+
+    <div style="display:flex; flex-direction:column;">
+        {draw_pitch(spieler)}
+    </div>
+
+    <div style="display:flex; flex-direction:column;">
+
+
+    {absence_table_html(absenzen)}
+
 </div>
 
-<div style="display:flex; flex-direction:column;">
-
-{absence_table_html(absenzen)}
+</div>
 """
 
 
 def erstelle_report(sfl, heim, gast):
+    html = f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>{sfl.get("heim","")} - {sfl.get("gast","")}</title>
+{CSS}
+</head>
+<body>
 
-    html = f"""
-<style>
-
-    /* -----------------------------------------
-       DRUCKFUNKTION
-       ----------------------------------------- */
-
-    .matchblatt-print-button {{
-        display: block;
-        margin: 15px auto;
-        padding: 10px 20px;
-        background: #1a365d;
-        color: #ffffff;
-        border: none;
-        border-radius: 5px;
-        font-size: 14px;
-        font-weight: bold;
-        cursor: pointer;
-    }}
-
-    .matchblatt-print-button:hover {{
-        opacity: 0.9;
-    }}
-
-    @media print {{
-
-        @page {{
-            size: A4;
-            margin: 10mm;
-        }}
-
-        .matchblatt-print-button {{
-            display: none !important;
-        }}
-    }}
-
-</style>
-
-<button
-    class="matchblatt-print-button"
-    onclick="window.print()"
->
-    DRUCKEN
-</button>
+<div class="page">
 
 {header(
-    heim.get("logo", ""),
-    gast.get("logo", ""),
-    sfl.get("heim", ""),
-    sfl.get("gast", ""),
-    sfl.get("liga", ""),
-    sfl.get("stadion", ""),
-    sfl.get("datum", ""),
-    sfl.get("zeit", ""),
-    sfl.get("schiedsrichter", ""),
-    sfl.get("var", "")
+    heim.get("logo",""),
+    gast.get("logo",""),
+    sfl.get("heim",""),
+    sfl.get("gast",""),
+    sfl.get("liga",""),
+    sfl.get("stadion",""),
+    sfl.get("datum",""),
+    sfl.get("zeit",""),
+    sfl.get("schiedsrichter",""),
+    sfl.get("var","")
 )}
 
 {match_info(sfl)}
 
 {team_block(
-    sfl.get("heim", ""),
+    sfl.get("heim",""),
     heim,
     sfl.get("heim_abwesend", {})
 )}
 
+<div style="height:2px;"></div>
+
 {team_block(
-    sfl.get("gast", ""),
+    sfl.get("gast",""),
     gast,
     sfl.get("gast_abwesend", {})
 )}
+
+</div>
+
+</body>
+</html>
 """
 
     Path("report.html").write_text(
