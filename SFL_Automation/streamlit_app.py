@@ -29,53 +29,148 @@ gast_url = st.text_input(
 
 
 # ---------------------------------------------------------
-# Status
+# Echten Browser-Button erzeugen
 # ---------------------------------------------------------
 
-if "report_ready" not in st.session_state:
-    st.session_state["report_ready"] = False
+components.html(
+    """
+    <button
+        id="matchblatt-button"
+        style="
+            padding: 10px 18px;
+            border-radius: 6px;
+            border: 1px solid #cccccc;
+            background: white;
+            font-size: 16px;
+            cursor: pointer;
+        "
+    >
+        MATCHBLATT ERSTELLEN
+    </button>
+
+    <script>
+        const button =
+            document.getElementById("matchblatt-button");
+
+        button.addEventListener("click", function () {
+
+            /*
+             * Der neue Tab wird DIREKT innerhalb
+             * des echten Mausklicks geöffnet.
+             *
+             * Dadurch kann Safari ihn nicht als
+             * nachträgliches Popup behandeln.
+             */
+            const tab = window.open(
+                "about:blank",
+                "_blank"
+            );
+
+            if (!tab) {
+                alert(
+                    "Safari hat das Öffnen eines neuen Tabs blockiert."
+                );
+                return;
+            }
+
+            /*
+             * Der neue Tab wartet auf report.html.
+             *
+             * Sobald Render die Datei bereitgestellt hat,
+             * wird der Tab automatisch dorthin umgeleitet.
+             */
+            tab.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Matchblatt wird erstellt...</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            padding: 40px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h2>Matchblatt wird erstellt...</h2>
+                    <p>Bitte kurz warten.</p>
+                </body>
+                </html>
+            `);
+
+            /*
+             * URL des fertigen Reports.
+             */
+            const reportUrl =
+                window.location.origin +
+                "/static/report.html";
+
+            /*
+             * Prüfen, ob report.html bereits existiert.
+             */
+            const checkReport = setInterval(
+                async function () {
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                reportUrl,
+                                {
+                                    method: "HEAD",
+                                    cache: "no-store"
+                                }
+                            );
+
+                        if (response.ok) {
+
+                            clearInterval(
+                                checkReport
+                            );
+
+                            tab.location.href =
+                                reportUrl;
+
+                            tab.focus();
+                        }
+
+                    } catch (error) {
+                        // Noch nicht vorhanden.
+                    }
+
+                },
+                1000
+            );
+
+            /*
+             * Streamlit mitteilen:
+             * Jetzt Matchblatt erstellen.
+             */
+            window.parent.postMessage(
+                {
+                    type: "CREATE_MATCHBLATT"
+                },
+                "*"
+            );
+        });
+    </script>
+    """,
+    height=55
+)
 
 
 # ---------------------------------------------------------
-# Matchblatt erstellen
+# Streamlit verarbeitet den Auftrag
 # ---------------------------------------------------------
 
-if st.button("MATCHBLATT ERSTELLEN"):
-
-    st.session_state["report_ready"] = False
-
-    if not sfl_url.strip():
-        st.error(
-            "Bitte die SFL Matchcenter URL eingeben."
-        )
-        st.stop()
-
-    if not heim_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Heimteams eingeben."
-        )
-        st.stop()
-
-    if not gast_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Gastteams eingeben."
-        )
-        st.stop()
+if st.query_params.get("create") == "1":
 
     try:
-
-        # -------------------------------------------------
-        # SFL
-        # -------------------------------------------------
 
         with st.spinner("Lade SFL..."):
             sfl = lade_sfl(
                 sfl_url.strip()
             )
-
-        # -------------------------------------------------
-        # Heimteam
-        # -------------------------------------------------
 
         with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
@@ -83,19 +178,11 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 sfl["heim"]
             )
 
-        # -------------------------------------------------
-        # Gastteam
-        # -------------------------------------------------
-
         with st.spinner("Lade Gastteam..."):
             gast = lade_transfermarkt(
                 gast_url.strip(),
                 sfl["gast"]
             )
-
-        # -------------------------------------------------
-        # Matchblatt erstellen
-        # -------------------------------------------------
 
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
@@ -104,40 +191,36 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 gast
             )
 
-        # -------------------------------------------------
-        # Prüfen
-        # -------------------------------------------------
-
-        report_path = Path("report.html")
+        report_path = Path(
+            "report.html"
+        )
 
         if not report_path.exists():
             raise FileNotFoundError(
                 "report.html wurde nicht erstellt."
             )
 
-        # -------------------------------------------------
-        # Für Streamlit Static Serving bereitstellen
-        # -------------------------------------------------
-
-        static_dir = Path(".streamlit") / "static"
+        static_dir = (
+            Path(".streamlit") /
+            "static"
+        )
 
         static_dir.mkdir(
             parents=True,
             exist_ok=True
         )
 
-        static_report = static_dir / "report.html"
-
-        html = report_path.read_text(
-            encoding="utf-8"
+        static_report = (
+            static_dir /
+            "report.html"
         )
 
         static_report.write_text(
-            html,
+            report_path.read_text(
+                encoding="utf-8"
+            ),
             encoding="utf-8"
         )
-
-        st.session_state["report_ready"] = True
 
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
@@ -145,53 +228,8 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
     except Exception as e:
 
-        st.session_state["report_ready"] = False
-
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
         )
 
         st.exception(e)
-
-
-# ---------------------------------------------------------
-# Automatisches Öffnen
-# ---------------------------------------------------------
-
-if st.session_state["report_ready"]:
-
-    components.html(
-        """
-        <script>
-            window.parent.postMessage(
-                {
-                    type: "OPEN_MATCHBLATT"
-                },
-                "*"
-            );
-        </script>
-        """,
-        height=0
-    )
-
-    st.markdown(
-        """
-        <script>
-        (function() {
-
-            const url = "/static/report.html";
-
-            const tab = window.open(
-                url,
-                "matchblatt"
-            );
-
-            if (tab) {
-                tab.focus();
-            }
-
-        })();
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
