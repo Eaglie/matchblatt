@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+
 import streamlit.components.v1 as components
 
 from sfl import lade_sfl
@@ -32,7 +33,9 @@ gast_url = st.text_input(
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
+        )
         st.stop()
 
     if not heim_url.strip():
