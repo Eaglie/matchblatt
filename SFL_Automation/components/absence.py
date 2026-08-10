@@ -23,5 +23,10 @@ def absence_table(absences):
 <td>{"<br>".join(absences.get("fraglich", []))}</td>
 </tr>
 
+<tr>
+<td>Nicht im Aufgebot</td>
+<td>{"<br>".join(absences.get("nicht_im_kader", []))}</td>
+</tr>
+
 </table>
 """
