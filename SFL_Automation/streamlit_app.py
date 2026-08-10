@@ -1,344 +1,188 @@
+import streamlit as st
+import streamlit.components.v1 as components
 from pathlib import Path
 
-from components.css import CSS
-from components.scorebar import scorebar
-from components.pitch import pitch
-from components.players import players
-from components.absence import absence_table
-from components.header import header
-from components.match_info import match_info
+
+st.set_page_config(
+    page_title="Matchblatt",
+    layout="wide"
+)
 
 
-def draw_players(spieler):
-    return players(spieler)
+st.title("MATCHBLATT")
 
 
-def draw_pitch(spieler):
-    return pitch(draw_players(spieler))
+sfl_url = st.text_input(
+    "SFL Matchcenter URL"
+)
+
+heim_url = st.text_input(
+    "Transfermarkt Heim"
+)
+
+gast_url = st.text_input(
+    "Transfermarkt Gast"
+)
 
 
-def absence_table_html(absences):
-    """
-    Erzeugt die Absenzen-Tabelle über die bestehende Komponente.
+if st.button("MATCHBLATT ERSTELLEN"):
 
-    Die bestehende Komponente kennt vier Kategorien.
-    'Nicht im Aufgebot' wird hier ergänzt, damit diese Kategorie
-    im Matchblatt nicht mehr verloren geht.
-    """
-    absences = absences or {}
+    # -------------------------------------------------
+    # EINGABEN PRÜFEN
+    # -------------------------------------------------
 
-    html = absence_table(absences)
-
-    nicht_im_aufgebot = absences.get(
-        "nicht_im_aufgebot",
-        absences.get("nicht im aufgebot", [])
-    )
-
-    if nicht_im_aufgebot:
-        namen = "<br>".join(
-            str(name)
-            for name in nicht_im_aufgebot
+    if not sfl_url.strip():
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
         )
-    else:
-        namen = ""
+        st.stop()
 
-    row = f"""
-    <tr>
-        <td>Nicht im Aufgebot</td>
-        <td>{namen}</td>
-    </tr>
-    """
 
-    if "</table>" in html:
-        html = html.replace(
-            "</table>",
-            row + "</table>",
-            1
+    if not heim_url.strip():
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
         )
-    else:
-        html += f"""
-        <table class="absence">
-            {row}
-        </table>
-        """
-
-    return html
+        st.stop()
 
 
-def parse_val(val):
-    if val is None:
-        return None
-
-    if isinstance(val, (int, float)):
-        return float(val)
-
-    if isinstance(val, str):
-        cleaned = "".join(
-            c
-            for c in val
-            if c.isdigit() or c in ".-"
+    if not gast_url.strip():
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
         )
-
-        if cleaned:
-            return float(cleaned)
-
-    return None
+        st.stop()
 
 
-def adjust_left(val):
-    n = parse_val(val)
+    try:
 
-    if n is None:
-        return val
+        # -------------------------------------------------
+        # IMPORTS ERST JETZT LADEN
+        # -------------------------------------------------
 
-    # Bestehende horizontale Anpassung beibehalten.
-    return 50 + (n - 50) * 1.2 + 12
-
-
-def adjust_top(val):
-    n = parse_val(val)
-
-    if n is None:
-        return val
-
-    # Bestehende vertikale Anpassung beibehalten.
-    return 50 + (n - 50) * 0.95 + 8
+        from sfl import lade_sfl
+        from transfermarkt import lade_transfermarkt
+        from report import erstelle_report
 
 
-def team_block(teamname, daten, absenzen, is_guest=False):
-    """
-    Baut genau einen Teamblock.
+        # -------------------------------------------------
+        # SFL LADEN
+        # -------------------------------------------------
 
-    Die Spielerkoordinaten werden nur hier angepasst.
-    Die Originalwerte bleiben erhalten.
-    """
+        with st.spinner(
+            "Lade SFL..."
+        ):
 
-    daten = daten or {}
-    absenzen = absenzen or {}
-
-    resultat = daten.get(
-        "resultat",
-        ""
-    )
-
-    logo = daten.get(
-        "logo",
-        ""
-    )
-
-    formation = daten.get(
-        "formation",
-        ""
-    )
-
-    raw_spieler = daten.get(
-        "spieler",
-        []
-    )
-
-    spieler = []
-
-    for s in raw_spieler:
-
-        if not isinstance(s, dict):
-            continue
-
-        s_copy = s.copy()
-
-        orig_left = s_copy.get(
-            "_orig_left",
-            s_copy.get(
-                "left",
-                s_copy.get("x")
+            sfl = lade_sfl(
+                sfl_url.strip()
             )
-        )
 
-        orig_top = s_copy.get(
-            "_orig_top",
-            s_copy.get(
-                "top",
-                s_copy.get("y")
+
+        # -------------------------------------------------
+        # HEIMTEAM LADEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Heimteam von Transfermarkt..."
+        ):
+
+            heim = lade_transfermarkt(
+                heim_url.strip(),
+                sfl["heim"]
             )
+
+
+        # -------------------------------------------------
+        # GASTTEAM LADEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Lade Gastteam von Transfermarkt..."
+        ):
+
+            gast = lade_transfermarkt(
+                gast_url.strip(),
+                sfl["gast"]
+            )
+
+
+        # -------------------------------------------------
+        # LETZTER GEGNER
+        # -------------------------------------------------
+
+        heim["letzter_gegner"] = sfl["gast"]
+
+        gast["letzter_gegner"] = sfl["heim"]
+
+
+        # -------------------------------------------------
+        # MATCHBLATT ERSTELLEN
+        # -------------------------------------------------
+
+        with st.spinner(
+            "Erstelle Matchblatt..."
+        ):
+
+            # WICHTIG:
+            # Reihenfolge ist:
+            # sfl, heim, gast
+            erstelle_report(
+                sfl,
+                heim,
+                gast
+            )
+
+
+        # -------------------------------------------------
+        # REPORT.HTML LADEN
+        # -------------------------------------------------
+
+        report_path = Path(
+            "report.html"
         )
 
-        s_copy["_orig_left"] = orig_left
-        s_copy["_orig_top"] = orig_top
 
-        s_copy["left"] = adjust_left(
-            orig_left
+        if not report_path.exists():
+
+            raise FileNotFoundError(
+                "report.html wurde nicht erstellt."
+            )
+
+
+        html = report_path.read_text(
+            encoding="utf-8"
         )
 
-        s_copy["top"] = adjust_top(
-            orig_top
+
+        if not html.strip():
+
+            raise ValueError(
+                "report.html wurde erstellt, ist aber leer."
+            )
+
+
+        # -------------------------------------------------
+        # ERFOLG
+        # -------------------------------------------------
+
+        st.success(
+            "✅ Matchblatt erfolgreich erstellt."
         )
 
-        spieler.append(
-            s_copy
+
+        # -------------------------------------------------
+        # MATCHBLATT DIREKT DARSTELLEN
+        # -------------------------------------------------
+
+        components.html(
+            html,
+            height=3000,
+            scrolling=True
         )
 
-    pitch_html = draw_pitch(
-        spieler
-    )
 
-    absence_html = absence_table_html(
-        absenzen
-    )
+    except Exception as e:
 
-    return f"""
-    <div class="team">
+        st.error(
+            "❌ Fehler beim Erstellen des Matchblatts."
+        )
 
-        {scorebar(
-            logo,
-            teamname,
-            resultat
-        )}
-
-        <div class="team_body">
-
-            <div class="formation">
-                <div class="formation_label">
-                    Formation
-                </div>
-
-                <div class="formation_value">
-                    {formation}
-                </div>
-            </div>
-
-            {pitch_html}
-
-            <div class="absence-container">
-                {absence_html}
-            </div>
-
-        </div>
-
-    </div>
-    """
-
-
-def erstelle_report(sfl, heim, gast):
-
-    html = f"""
-<!DOCTYPE html>
-
-<html lang="de">
-
-<head>
-
-<meta charset="utf-8">
-
-<title>
-{sfl.get("heim", "")} -
-{sfl.get("gast", "")}
-</title>
-
-{CSS}
-
-</head>
-
-<body>
-
-<div class="page">
-
-    {header(
-        heim.get("logo", ""),
-        gast.get("logo", ""),
-        sfl.get("heim", ""),
-        sfl.get("gast", ""),
-        sfl.get("liga", ""),
-        sfl.get("stadion", ""),
-        sfl.get("datum", ""),
-        sfl.get("zeit", ""),
-        sfl.get("schiedsrichter", ""),
-        sfl.get("var", "")
-    )}
-
-    {match_info(sfl)}
-
-    {team_block(
-        sfl.get("heim", ""),
-        heim,
-        sfl.get(
-            "heim_abwesend",
-            {}
-        ),
-        is_guest=False
-    )}
-
-    {team_block(
-        sfl.get("gast", ""),
-        gast,
-        sfl.get(
-            "gast_abwesend",
-            {}
-        ),
-        is_guest=True
-    )}
-
-</div>
-
-</body>
-
-</html>
-"""
-
-    Path(
-        "report.html"
-    ).write_text(
-        html,
-        encoding="utf-8"
-    )
-
-    print(
-        "✓ report.html erstellt"
-    )
-
-    return html
-
-
-def report_vorlage():
-    return {
-        "heim": "",
-        "gast": "",
-        "liga": "",
-        "datum": "",
-        "zeit": "",
-        "stadion": "",
-        "schiedsrichter": "",
-        "var": "",
-        "runde": "",
-        "zuschauer": ""
-    }
-
-
-def team_vorlage():
-    return {
-        "logo": "",
-        "formation": "",
-        "resultat": "",
-        "letzter_gegner": "",
-        "trainer": "",
-        "captain": "",
-        "tabellenplatz": "",
-        "form": "",
-        "tore": "",
-        "gegentore": "",
-        "xg": "",
-        "ballbesitz": "",
-        "spieler": [],
-        "ersatzbank": [],
-        "absenzen": {
-            "gesperrt": [],
-            "verletzt": [],
-            "krank": [],
-            "fraglich": [],
-            "nicht_im_aufgebot": []
-        }
-    }
-
-
-if __name__ == "__main__":
-    print(
-        "Dieses Modul wird von main.py aufgerufen."
-    )
+        st.exception(e)
