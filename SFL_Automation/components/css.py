@@ -1,6 +1,4 @@
 CSS = """
-<style>
-
 *{
     box-sizing: border-box;
 }
@@ -102,14 +100,14 @@ body{
 }
 
 .absence td{
-    border:1px solid #d9dee5;
-    padding:6px 10px;
-    height:30px;
-    font-size:11px;
-    font-weight:700;
-    line-height:1.25;
-    color:#111;
-    vertical-align:top;
+    border: 1px solid #d9dee5;
+    padding: 6px 10px;
+    height: 30px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #111;
+    vertical-align: top;
 }
 
 .absence td:first-child{
@@ -129,19 +127,19 @@ body{
     box-shadow: 0 2px 8px rgba(0,0,0,.06);
 }
 
-.team_head {
-    display:flex;
-    align-items:center;
-    width:100%;
-    background:#17233f;
-    border-radius:10px 10px 0 0;
-    overflow:hidden;
-    margin-bottom:0;
-    white-space:nowrap;
-    font-family:Arial, Helvetica, sans-serif;
+.team_head{
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: #17233f;
+    border-radius: 10px 10px 0 0;
+    overflow: hidden;
+    margin-bottom: 0;
+    white-space: nowrap;
+    font-family: Arial, Helvetica, sans-serif;
 }
 
-.team_name {
+.team_name{
     flex: 1;
     background: #17233f;
     color: #fff;
@@ -151,11 +149,11 @@ body{
     text-align: left;
 }
 
-.team_score {
+.team_score{
     display: none;
 }
 
-.team_opponent {
+.team_opponent{
     background: #17233f;
     color: rgba(255,255,255,.85);
     padding: 10px 16px;
@@ -165,25 +163,22 @@ body{
     margin-left: auto;
 }
 
-.team_logo {
+.team_logo{
     display: none;
 }
 
 .team_body{
-    display:grid;
-    grid-template-columns:380px 1fr;
-    gap:28px;
-    padding:6px 18px 4px 18px;
-    align-items:start;
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 28px;
+    padding: 6px 18px 4px 18px;
+    align-items: start;
 }
 
 .formation{
-    width:380px;
-    display:flex;
-    justify-content:center;
-}
-
-.formation{
+    width: 380px;
+    display: flex;
+    justify-content: center;
     text-align: center;
 }
 
@@ -201,13 +196,13 @@ body{
 }
 
 .pitch{
-    position:relative;
-    width:380px;
-    height:380px;
-    border:1px solid #d7dfe8;
-    border-radius:8px;
-    background:#fff;
-    overflow:hidden;
+    position: relative;
+    width: 380px;
+    height: 380px;
+    border: 1px solid #d7dfe8;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
 }
 
 .pitch::before{
@@ -215,18 +210,18 @@ body{
 }
 
 .midline{
-    position:absolute;
-    left:0;
-    right:0;
-    top:50%;
-    border-top:2px solid rgba(255,255,255,.85);
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 2px solid rgba(255,255,255,.85);
 }
 
 .centerdot{
-    position:absolute;
-    width:6px;
-    height:6px;
-    background:#fff;
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #fff;
     border-radius: 50%;
     left: 50%;
     top: 50%;
@@ -306,7 +301,7 @@ body{
     transform: translateX(-50%);
 }
 
-.corner_top_left {
+.corner_top_left{
     position: absolute;
     top: -8px;
     left: -8px;
@@ -316,7 +311,7 @@ body{
     border-radius: 50%;
 }
 
-.corner_top_right {
+.corner_top_right{
     position: absolute;
     top: -8px;
     right: -8px;
@@ -326,7 +321,7 @@ body{
     border-radius: 50%;
 }
 
-.corner_bottom_left {
+.corner_bottom_left{
     position: absolute;
     bottom: -8px;
     left: -8px;
@@ -336,7 +331,7 @@ body{
     border-radius: 50%;
 }
 
-.corner_bottom_right {
+.corner_bottom_right{
     position: absolute;
     bottom: -8px;
     right: -8px;
@@ -348,7 +343,7 @@ body{
 
 .player{
     position: absolute;
-    transform: translate(-50%,-50%);
+    transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -358,49 +353,48 @@ body{
 }
 
 .player_number{
-    width:auto;
-    height:auto;
-    margin:0;
-    padding:0;
-    background:none;
-    border:none;
-    box-shadow:none;
-    font-size:12px;
-    font-weight:700;
-    line-height:1;
-    color:#111;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    color: #111;
 }
 
 .player_name{
-    margin-top:2px;
-    padding:0;
-    background:none;
-    border:none;
-    box-shadow:none;
-    font-size:11px;
-    font-weight:700;
-    line-height:1.1;
-    color:#111;
-    text-align:center;
-    white-space:nowrap;
+    margin-top: 2px;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #111;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .player_position{
     display: none;
 }
 
-html {
+html{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
 }
 
-body {
+body{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
 }
-
-</style>
 """
+
 
 FORMATION_COORDS = {
     "4-2-3-1": {
