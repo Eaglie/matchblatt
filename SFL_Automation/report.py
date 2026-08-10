@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from components.css import CSS
 from components.scorebar import scorebar
 from components.pitch import pitch
@@ -95,21 +96,12 @@ def team_block(teamname, daten, absenzen):
             spieler.append(s_copy)
 
     return f"""
-<div style="display:flex; flex-direction:column;">
-    {draw_pitch(spieler)}
-</div>
-
-<div style="display:flex; flex-direction:column;">
-    {absence_table_html(absenzen)}
-</div>
 """
 
 
 def erstelle_report(sfl, heim, gast):
-html = f"""
+    html = f"""
 {CSS}
-
-{header(
 
 {header(
     heim.get("logo", ""),
