@@ -614,9 +614,13 @@ def lade_transfermarkt(
             except Exception:
                 pass
 
-            page.wait_for_timeout(
-                5000
-            )
+            try:
+    page.wait_for_selector(
+        "div.formation-player-container",
+        timeout=30000
+    )
+except Exception:
+    page.wait_for_timeout(5000)
 
             html = page.content()
 
