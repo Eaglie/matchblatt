@@ -106,7 +106,10 @@ def team_block(teamname, daten, absenzen):
 
 
 def erstelle_report(sfl, heim, gast):
-    html = f"""
+html = f"""
+{CSS}
+
+{header(
 
 {header(
     heim.get("logo", ""),
