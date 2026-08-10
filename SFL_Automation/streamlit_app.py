@@ -1,6 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -9,9 +11,23 @@ st.set_page_config(
 
 st.title("MATCHBLATT")
 
+
 sfl_url = st.text_input("SFL Matchcenter URL")
 heim_url = st.text_input("Transfermarkt Heim")
 gast_url = st.text_input("Transfermarkt Gast")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def lade_sfl_cached(url):
+    from sfl import lade_sfl
+    return lade_sfl(url)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def lade_tm_cached(url, teamname):
+    from transfermarkt import lade_transfermarkt
+    return lade_transfermarkt(url, teamname)
+
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
@@ -28,31 +44,38 @@ if st.button("MATCHBLATT ERSTELLEN"):
         st.stop()
 
     try:
-        from sfl import lade_sfl
-        from transfermarkt import lade_transfermarkt
         from report import erstelle_report
 
-        progress = st.progress(0, text="Starte...")
+        progress = st.progress(0, text="Lade SFL...")
 
-        progress.progress(10, text="Lade SFL...")
-        sfl = lade_sfl(sfl_url.strip())
+        sfl = lade_sfl_cached(sfl_url.strip())
+        progress.progress(25, text="SFL geladen – Transfermarkt wird geladen...")
 
-        progress.progress(35, text="Lade Heimteam von Transfermarkt...")
-        heim = lade_transfermarkt(
-            heim_url.strip(),
-            sfl["heim"]
-        )
+        # Heim und Gast gleichzeitig laden.
+        with ThreadPoolExecutor(max_workers=2) as executor:
 
-        progress.progress(60, text="Lade Gastteam von Transfermarkt...")
-        gast = lade_transfermarkt(
-            gast_url.strip(),
-            sfl["gast"]
-        )
+            future_heim = executor.submit(
+                lade_tm_cached,
+                heim_url.strip(),
+                sfl["heim"]
+            )
+
+            future_gast = executor.submit(
+                lade_tm_cached,
+                gast_url.strip(),
+                sfl["gast"]
+            )
+
+            heim = future_heim.result()
+            progress.progress(62, text="Heimteam geladen – Gastteam wird fertig geladen...")
+
+            gast = future_gast.result()
+
+        progress.progress(80, text="Erstelle Matchblatt...")
 
         heim["letzter_gegner"] = sfl["gast"]
         gast["letzter_gegner"] = sfl["heim"]
 
-        progress.progress(85, text="Erstelle Matchblatt...")
         erstelle_report(
             sfl,
             heim,
