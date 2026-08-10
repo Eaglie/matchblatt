@@ -1,240 +1,66 @@
+import streamlit as st
+import streamlit.components.v1 as components
 from pathlib import Path
 
-from components.css import CSS
-from components.scorebar import scorebar
-from components.pitch import pitch
-from components.players import players
-from components.absence import absence_table
-from components.header import header
-from components.match_info import match_info
+st.set_page_config(
+    page_title="Matchblatt",
+    layout="wide"
+)
 
+st.title("MATCHBLATT")
 
-def draw_players(spieler):
-    return players(spieler)
+sfl_url = st.text_input("SFL Matchcenter URL")
+heim_url = st.text_input("Transfermarkt Heim")
+gast_url = st.text_input("Transfermarkt Gast")
 
+if st.button("MATCHBLATT ERSTELLEN"):
 
-def draw_pitch(spieler):
-    return pitch(draw_players(spieler))
+    if not sfl_url.strip():
+        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.stop()
 
+    if not heim_url.strip():
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.stop()
 
-def absence_table_html(absences):
-    return absence_table(absences)
+    if not gast_url.strip():
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.stop()
 
+    try:
+        from sfl import lade_sfl
+        from transfermarkt import lade_transfermarkt
+        from report import erstelle_report
 
-def parse_val(val):
-    if val is None:
-        return None
+        progress = st.progress(0, text="Starte...")
 
-    if isinstance(val, (int, float)):
-        return float(val)
+        progress.progress(10, text="Lade SFL...")
+        sfl = lade_sfl(sfl_url.strip())
 
-    if isinstance(val, str):
-        cleaned = "".join(
-            c for c in val
-            if c.isdigit() or c in ".-"
+        progress.progress(35, text="Lade Heimteam von Transfermarkt...")
+        heim = lade_transfermarkt(
+            heim_url.strip(),
+            sfl["heim"]
         )
 
-        if cleaned:
-            try:
-                return float(cleaned)
-            except ValueError:
-                return None
+        progress.progress(60, text="Lade Gastteam von Transfermarkt...")
+        gast = lade_transfermarkt(
+            gast_url.strip(),
+            sfl["gast"]
+        )
 
-    return None
+        heim["letzter_gegner"] = sfl["gast"]
+        gast["letzter_gegner"] = sfl["heim"]
 
+        progress.progress(85, text="Erstelle Matchblatt...")
+        erstelle_report(
+            sfl,
+            heim,
+            gast
+        )
 
-def adjust_left(val):
-    n = parse_val(val)
+        report_path = Path("report.html")
 
-    if n is None:
-        return val
-
-    # Horizontal leicht nach rechts verschieben
-    return 50 + (n - 50) * 1.2 + 12
-
-
-def adjust_top(val):
-    n = parse_val(val)
-
-    if n is None:
-        return val
-
-    # Vertikal etwas nach unten verschieben
-    return 50 + (n - 50) * 0.95 + 8
-
-
-def team_block(teamname, daten, absenzen):
-    daten = daten or {}
-    absenzen = absenzen or {}
-
-    resultat = daten.get("resultat", "")
-    logo = daten.get("logo", "")
-
-    raw_spieler = daten.get("spieler", [])
-    spieler = []
-
-    for s in raw_spieler:
-
-        if isinstance(s, dict):
-
-            s_copy = s.copy()
-
-            orig_left = s_copy.get(
-                "_orig_left",
-                s_copy.get(
-                    "left",
-                    s_copy.get("x")
-                )
-            )
-
-            orig_top = s_copy.get(
-                "_orig_top",
-                s_copy.get(
-                    "top",
-                    s_copy.get("y")
-                )
-            )
-
-            s_copy["_orig_left"] = orig_left
-            s_copy["_orig_top"] = orig_top
-
-            s_copy["left"] = adjust_left(orig_left)
-            s_copy["top"] = adjust_top(orig_top)
-
-            spieler.append(s_copy)
-
-    return f"""
-<div style="display:flex; flex-direction:column;">
-
-    {draw_pitch(spieler)}
-
-</div>
-
-<div style="display:flex; flex-direction:column;">
-
-    {absence_table_html(absenzen)}
-
-</div>
-"""
-
-
-def erstelle_report(sfl, heim, gast):
-
-    sfl = sfl or {}
-    heim = heim or {}
-    gast = gast or {}
-
-    # ============================================================
-    # WICHTIG:
-    # CSS wird hier ausdrücklich als STYLE eingebettet.
-    # Dadurch darf es nicht als sichtbarer Text erscheinen.
-    # ============================================================
-
-    html = f"""
-<!DOCTYPE html>
-<html lang="de">
-
-<head>
-
-<meta charset="utf-8">
-
-<title>
-    {sfl.get("heim", "")} – {sfl.get("gast", "")}
-</title>
-
-<style>
-{CSS}
-</style>
-
-</head>
-
-<body>
-
-{header(
-    heim.get("logo", ""),
-    gast.get("logo", ""),
-    sfl.get("heim", ""),
-    sfl.get("gast", ""),
-    sfl.get("liga", ""),
-    sfl.get("stadion", ""),
-    sfl.get("datum", ""),
-    sfl.get("zeit", ""),
-    sfl.get("schiedsrichter", ""),
-    sfl.get("var", "")
-)}
-
-{match_info(sfl)}
-
-{team_block(
-    sfl.get("heim", ""),
-    heim,
-    sfl.get("heim_abwesend", {})
-)}
-
-{team_block(
-    sfl.get("gast", ""),
-    gast,
-    sfl.get("gast_abwesend", {})
-)}
-
-</body>
-
-</html>
-"""
-
-    Path("report.html").write_text(
-        html,
-        encoding="utf-8"
-    )
-
-    print("✓ report.html erstellt")
-
-
-def report_vorlage():
-    return {
-        "heim": "",
-        "gast": "",
-        "liga": "",
-        "datum": "",
-        "zeit": "",
-        "stadion": "",
-        "schiedsrichter": "",
-        "var": "",
-        "runde": "",
-        "zuschauer": ""
-    }
-
-
-def team_vorlage():
-    return {
-        "logo": "",
-        "formation": "",
-        "resultat": "",
-        "letzter_gegner": "",
-        "trainer": "",
-        "captain": "",
-        "tabellenplatz": "",
-        "form": "",
-        "tore": "",
-        "gegentore": "",
-        "xg": "",
-        "ballbesitz": "",
-        "spieler": [],
-        "ersatzbank": [],
-        "absenzen": {
-            "gesperrt": [],
-            "verletzt": [],
-            "krank": [],
-            "fraglich": [],
-            "nicht_im_aufgebot": []
-        }
-    }
-
-
-if __name__ == "__main__":
-    print(
-        "Dieses Modul wird von main.py aufgerufen."
-    )
         if not report_path.exists():
             raise FileNotFoundError(
                 "report.html wurde nicht erstellt."
@@ -249,11 +75,10 @@ if __name__ == "__main__":
                 "report.html ist leer."
             )
 
+        progress.progress(100, text="Matchblatt fertig.")
+
         st.success("✅ Matchblatt erfolgreich erstellt.")
 
-        # Das komplette HTML-Dokument wird in einem echten
-        # HTML-Iframe gerendert. Kein st.markdown(), damit
-        # <style> nicht als sichtbarer CSS-Text erscheint.
         components.html(
             html,
             height=1900,
