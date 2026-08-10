@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from components.css import CSS
 from components.scorebar import scorebar
 from components.pitch import pitch
@@ -12,8 +13,8 @@ def draw_players(spieler):
     return players(spieler)
 
 
-def draw_pitch(players):
-    return pitch(draw_players(players))
+def draw_pitch(spieler):
+    return pitch(draw_players(spieler))
 
 
 def absence_table_html(absences):
@@ -28,7 +29,10 @@ def parse_val(val):
     if isinstance(val, str):
         cleaned = "".join(c for c in val if c.isdigit() or c in ".-")
         if cleaned:
-            return float(cleaned)
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
     return None
 
 
@@ -36,118 +40,127 @@ def adjust_left(val):
     n = parse_val(val)
     if n is None:
         return val
-
-    # Horizontal leicht nach rechts verschieben
-    return 50 + (n - 50) * 01.2 + 12
+    return 50 + (n - 50) * 1.2 + 12
 
 
 def adjust_top(val):
     n = parse_val(val)
     if n is None:
         return val
-
-    # Vertikal etwas nach unten verschieben
     return 50 + (n - 50) * 0.95 + 8
 
 
 def team_block(teamname, daten, absenzen):
-    resultat = daten.get("resultat", "")
-    logo = daten.get("logo", "")
+    daten = daten or {}
+    absenzen = absenzen or {}
 
     raw_spieler = daten.get("spieler", [])
     spieler = []
 
     for s in raw_spieler:
-        if isinstance(s, dict):
-            s_copy = s.copy()
-            orig_left = s_copy.get("_orig_left", s_copy.get("left", s_copy.get("x")))
-            orig_top = s_copy.get("_orig_top", s_copy.get("top", s_copy.get("y")))
+        if not isinstance(s, dict):
+            continue
 
-            s_copy["_orig_left"] = orig_left
-            s_copy["_orig_top"] = orig_top
+        s_copy = s.copy()
 
-            s_copy["left"] = adjust_left(orig_left)
-            s_copy["top"] = adjust_top(orig_top)
-            spieler.append(s_copy)
+        orig_left = s_copy.get(
+            "_orig_left",
+            s_copy.get("left", s_copy.get("x"))
+        )
+        orig_top = s_copy.get(
+            "_orig_top",
+            s_copy.get("top", s_copy.get("y"))
+        )
+
+        s_copy["_orig_left"] = orig_left
+        s_copy["_orig_top"] = orig_top
+        s_copy["left"] = adjust_left(orig_left)
+        s_copy["top"] = adjust_top(orig_top)
+
+        spieler.append(s_copy)
 
     return f"""
-<div class="team">
-{scorebar(
-    teamname,
-    logo,
-    resultat,
-    daten.get("letzter_gegner", "")
-)}
-
-<div class="team_body">
-
-    <div style="display:flex; flex-direction:column;">
-        {draw_pitch(spieler)}
+<div class="team_block">
+    <div class="team_content">
+        <div class="team_pitch">
+            {draw_pitch(spieler)}
+        </div>
+        <div class="team_absence">
+            {absence_table_html(absenzen)}
+        </div>
     </div>
-
-    <div style="display:flex; flex-direction:column;">
-
-
-    {absence_table_html(absenzen)}
-
-</div>
-
 </div>
 """
 
 
+def _normalise_css(css):
+    """
+    CSS darf aus components.css entweder als reiner CSS-Text
+    oder bereits als <style>...</style> kommen.
+    Am Ende wird immer genau EIN style-Block erzeugt.
+    """
+    css = "" if css is None else str(css).strip()
+
+    lower = css.lower()
+
+    if lower.startswith("<style"):
+        start = css.find(">")
+        end = lower.rfind("</style>")
+
+        if start != -1 and end != -1 and end > start:
+            css = css[start + 1:end].strip()
+
+    return "<style>\n" + css + "\n</style>"
+
+
 def erstelle_report(sfl, heim, gast):
+    sfl = sfl or {}
+    heim = heim or {}
+    gast = gast or {}
+
+    css_block = _normalise_css(CSS)
+
     html = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>{sfl.get("heim","")} - {sfl.get("gast","")}</title>
-{CSS}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{css_block}
 </head>
 <body>
 
-<div class="page">
-
 {header(
-    heim.get("logo",""),
-    gast.get("logo",""),
-    sfl.get("heim",""),
-    sfl.get("gast",""),
-    sfl.get("liga",""),
-    sfl.get("stadion",""),
-    sfl.get("datum",""),
-    sfl.get("zeit",""),
-    sfl.get("schiedsrichter",""),
-    sfl.get("var","")
+    heim.get("logo", ""),
+    gast.get("logo", ""),
+    sfl.get("heim", ""),
+    sfl.get("gast", ""),
+    sfl.get("liga", ""),
+    sfl.get("stadion", ""),
+    sfl.get("datum", ""),
+    sfl.get("zeit", ""),
+    sfl.get("schiedsrichter", ""),
+    sfl.get("var", "")
 )}
 
 {match_info(sfl)}
 
 {team_block(
-    sfl.get("heim",""),
+    sfl.get("heim", ""),
     heim,
-    sfl.get("heim_abwesend", {})
+    sfl.get("heim_abwesend", heim.get("absenzen", {}))
 )}
-
-<div style="height:2px;"></div>
 
 {team_block(
-    sfl.get("gast",""),
+    sfl.get("gast", ""),
     gast,
-    sfl.get("gast_abwesend", {})
+    sfl.get("gast_abwesend", gast.get("absenzen", {}))
 )}
-
-</div>
 
 </body>
 </html>
 """
 
-    Path("report.html").write_text(
-        html,
-        encoding="utf-8"
-    )
-
+    Path("report.html").write_text(html, encoding="utf-8")
     print("✓ report.html erstellt")
 
 
@@ -186,7 +199,8 @@ def team_vorlage():
             "gesperrt": [],
             "verletzt": [],
             "krank": [],
-            "fraglich": []
+            "fraglich": [],
+            "nicht_im_aufgebot": []
         }
     }
 
