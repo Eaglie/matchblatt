@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+import streamlit.components.v1 as components
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -49,18 +50,10 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
     try:
 
-        # ---------------------------------------------
-        # SFL laden
-        # ---------------------------------------------
-
         with st.spinner("Lade SFL..."):
             sfl = lade_sfl(
                 sfl_url.strip()
             )
-
-        # ---------------------------------------------
-        # Heimteam laden
-        # ---------------------------------------------
 
         with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
@@ -68,19 +61,11 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 sfl["heim"]
             )
 
-        # ---------------------------------------------
-        # Gastteam laden
-        # ---------------------------------------------
-
         with st.spinner("Lade Gastteam..."):
             gast = lade_transfermarkt(
                 gast_url.strip(),
                 sfl["gast"]
             )
-
-        # ---------------------------------------------
-        # Matchblatt erstellen
-        # ---------------------------------------------
 
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
@@ -89,10 +74,6 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 gast
             )
 
-        # ---------------------------------------------
-        # Report prüfen
-        # ---------------------------------------------
-
         report_path = Path("report.html")
 
         if not report_path.exists():
@@ -100,27 +81,19 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nicht erstellt."
             )
 
-        # ---------------------------------------------
-        # Report laden
-        # ---------------------------------------------
-
         html = report_path.read_text(
             encoding="utf-8"
         )
-
-        # ---------------------------------------------
-        # Erfolgreich
-        # ---------------------------------------------
 
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # ---------------------------------------------
-        # Matchblatt direkt unterhalb anzeigen
-        # ---------------------------------------------
-
-        st.html(html)
+        components.html(
+            html,
+            height=1800,
+            scrolling=True
+        )
 
     except Exception as e:
 
