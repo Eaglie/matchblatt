@@ -1,6 +1,6 @@
 import streamlit as st
 from pathlib import Path
-import streamlit.components.v1 as components
+import shutil
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -80,18 +80,25 @@ if st.button("MATCHBLATT ERSTELLEN"):
                 "report.html wurde nicht erstellt."
             )
 
+        static_dir = Path("static")
+        static_dir.mkdir(
+            exist_ok=True
+        )
+
+        static_report = static_dir / "report.html"
+
+        shutil.copyfile(
+            report_path,
+            static_report
+        )
+
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        html_content = report_path.read_text(
-            encoding="utf-8"
-        )
-
-        components.html(
-            html_content,
-            height=3000,
-            scrolling=True
+        st.iframe(
+            "/app/static/report.html",
+            height=3000
         )
 
     except Exception as e:
