@@ -150,20 +150,50 @@ def lade_sfl(url):
     )
 
     if commentary_response.ok:
+
         try:
             commentary = commentary_response.json()
+
         except Exception:
             commentary = {}
+
     else:
         commentary = {}
 
-    html = (
-        commentary
-        .get("commentary", {})
-        .get("messages", [{}])[0]
-        .get("message", [{}])[0]
-        .get("comment", "")
-    )
+    # ---------------------------------------------------------
+    # ABSENZEN-HTML AUS DER KOMPLETTEN COMMENTARY ANSCHAUEN
+    # ---------------------------------------------------------
+
+    def finde_absenzen_html(obj):
+
+        if isinstance(obj, dict):
+
+            for key, value in obj.items():
+
+                if (
+                    key == "comment"
+                    and isinstance(value, str)
+                    and "ABWESENDE SPIELER" in value.upper()
+                ):
+                    return value
+
+                gefunden = finde_absenzen_html(value)
+
+                if gefunden:
+                    return gefunden
+
+        elif isinstance(obj, list):
+
+            for value in obj:
+
+                gefunden = finde_absenzen_html(value)
+
+                if gefunden:
+                    return gefunden
+
+        return ""
+
+    html = finde_absenzen_html(commentary)
 
     # ---------------------------------------------------------
     # ABSENZEN
@@ -171,54 +201,141 @@ def lade_sfl(url):
 
     def extrahiere_absenzen(teamname):
 
+        leeres_ergebnis = {
+            "gesperrt": [],
+            "verletzt": [],
+            "krank": [],
+            "fraglich": [],
+            "nicht_im_kader": []
+        }
+
+        if not html:
+            return leeres_ergebnis
+
         soup = BeautifulSoup(
             html,
             "html.parser"
         )
 
-        text = soup.get_text("\n")
+        text = soup.get_text(
+            "\n",
+            strip=True
+        )
 
-        teile = text.split(teamname)
+        zeilen = [
+            re.sub(
+                r"\s+",
+                " ",
+                zeile
+            ).strip()
+            for zeile in text.splitlines()
+            if zeile.strip()
+        ]
 
-        if len(teile) < 2:
-            return {
-                "gesperrt": [],
-                "verletzt": [],
-                "krank": [],
-                "fraglich": [],
-                "nicht_im_kader": []
-            }
+        # -----------------------------------------------------
+        # ABWESENDE SPIELER finden
+        # -----------------------------------------------------
 
-        block = teile[1]
+        absenzen_start = None
 
-        def hole(feld):
+        for i, zeile in enumerate(zeilen):
 
-            m = re.search(
-                rf"{feld}:\s*(.*)",
-                block
-            )
+            if zeile.upper() == "ABWESENDE SPIELER":
+                absenzen_start = i
+                break
 
-            if not m:
-                return []
+        if absenzen_start is None:
+            return leeres_ergebnis
 
-            wert = m.group(1).strip()
+        # -----------------------------------------------------
+        # Gewünschtes Team finden
+        # -----------------------------------------------------
 
-            if wert in ("", "-", "..."):
-                return []
+        team_index = None
 
-            return [
-                x.strip()
-                for x in wert.split(",")
-                if x.strip()
-            ]
+        for i in range(
+            absenzen_start + 1,
+            len(zeilen)
+        ):
 
-        return {
-            "gesperrt": hole("Gesperrt"),
-            "verletzt": hole("Verletzt"),
-            "krank": hole("Krank"),
-            "fraglich": hole("Fraglich"),
-            "nicht_im_kader": []
+            if (
+                zeilen[i].strip().lower()
+                == teamname.strip().lower()
+            ):
+                team_index = i
+                break
+
+        if team_index is None:
+            return leeres_ergebnis
+
+        # -----------------------------------------------------
+        # Kategorien
+        # -----------------------------------------------------
+
+        kategorien = {
+            "Gesperrt": "gesperrt",
+            "Verletzt": "verletzt",
+            "Krank": "krank",
+            "Fraglich": "fraglich",
+            "Nicht im Aufgebot": "nicht_im_kader"
         }
+
+        ergebnis = leeres_ergebnis.copy()
+
+        # -----------------------------------------------------
+        # Teamblock auslesen
+        # -----------------------------------------------------
+
+        for zeile in zeilen[team_index + 1:]:
+
+            if not zeile:
+                continue
+
+            # Kategorie erkennen
+            for bezeichnung, schluessel in kategorien.items():
+
+                prefix = bezeichnung + ":"
+
+                if zeile.lower().startswith(
+                    prefix.lower()
+                ):
+
+                    wert = zeile[
+                        len(prefix):
+                    ].strip()
+
+                    if wert in ("", "-", "..."):
+
+                        ergebnis[schluessel] = []
+
+                    else:
+
+                        ergebnis[schluessel] = [
+                            name.strip()
+                            for name in re.split(
+                                r",\s*",
+                                wert
+                            )
+                            if name.strip()
+                        ]
+
+                    break
+
+            # Nach dem nächsten Team nicht weiterlaufen.
+            if (
+                zeile.strip().lower()
+                != teamname.strip().lower()
+                and ":" not in zeile
+                and not any(
+                    zeile.lower().startswith(
+                        (k + ":").lower()
+                    )
+                    for k in kategorien
+                )
+            ):
+                break
+
+        return ergebnis
 
     # ---------------------------------------------------------
     # DATUM / ZEIT
