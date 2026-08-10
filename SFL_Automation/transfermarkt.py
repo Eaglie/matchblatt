@@ -608,7 +608,7 @@ def lade_transfermarkt(
                 page.goto(
                     url,
                     wait_until="commit",
-                    timeout=30000
+                    timeout=12000
                 )
 
             except Exception:
@@ -617,10 +617,10 @@ def lade_transfermarkt(
             try:
                 page.wait_for_selector(
                     "div.formation-player-container",
-                    timeout=30000
+                    timeout=5000
                 )
             except Exception:
-                page.wait_for_timeout(5000)
+                pass
 
             html = page.content()
 
@@ -629,7 +629,6 @@ def lade_transfermarkt(
             browser.close()
 
     if not html:
-
         raise ValueError(
             "Transfermarkt-Seite konnte "
             "nicht geladen werden."
