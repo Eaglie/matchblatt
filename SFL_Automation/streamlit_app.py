@@ -1,6 +1,5 @@
 import streamlit as st
 from pathlib import Path
-
 import streamlit.components.v1 as components
 
 from sfl import lade_sfl
@@ -13,61 +12,46 @@ st.set_page_config(
     layout="wide"
 )
 
-
 st.title("MATCHBLATT")
 
-
-sfl_url = st.text_input(
-    "SFL Matchcenter URL"
-)
-
-heim_url = st.text_input(
-    "Transfermarkt Heim"
-)
-
-gast_url = st.text_input(
-    "Transfermarkt Gast"
-)
+sfl_url = st.text_input("SFL Matchcenter URL")
+heim_url = st.text_input("Transfermarkt Heim")
+gast_url = st.text_input("Transfermarkt Gast")
 
 
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error(
-            "Bitte die SFL Matchcenter URL eingeben."
-        )
+        st.error("Bitte die SFL Matchcenter URL eingeben.")
         st.stop()
 
     if not heim_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Heimteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
         st.stop()
 
     if not gast_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Gastteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
         st.stop()
 
     try:
 
         with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(
-                sfl_url.strip()
-            )
+            sfl = lade_sfl(sfl_url)
 
-        with st.spinner("Lade Heimteam..."):
+        with st.spinner("Lade Heimteam von Transfermarkt..."):
             heim = lade_transfermarkt(
-                heim_url.strip(),
+                heim_url,
                 sfl["heim"]
             )
 
-        with st.spinner("Lade Gastteam..."):
+        with st.spinner("Lade Gastteam von Transfermarkt..."):
             gast = lade_transfermarkt(
-                gast_url.strip(),
+                gast_url,
                 sfl["gast"]
             )
+
+        heim["letzter_gegner"] = sfl["gast"]
+        gast["letzter_gegner"] = sfl["heim"]
 
         with st.spinner("Erstelle Matchblatt..."):
             erstelle_report(
@@ -80,27 +64,22 @@ if st.button("MATCHBLATT ERSTELLEN"):
 
         if not report_path.exists():
             raise FileNotFoundError(
-                "report.html wurde nicht erstellt."
+                "report.html wurde nach der Erstellung nicht gefunden."
             )
 
-        st.success(
-            "✅ Matchblatt erfolgreich erstellt."
-        )
-
-        html_content = report_path.read_text(
+        html = report_path.read_text(
             encoding="utf-8"
         )
 
+        st.success("✅ Matchblatt erfolgreich erstellt.")
+
         components.html(
-            html_content,
+            html,
             height=3000,
             scrolling=True
         )
 
     except Exception as e:
 
-        st.error(
-            "❌ Fehler beim Erstellen des Matchblatts."
-        )
-
+        st.error("❌ Fehler beim Erstellen des Matchblatts.")
         st.exception(e)
