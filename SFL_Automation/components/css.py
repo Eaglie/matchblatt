@@ -109,16 +109,8 @@ line-height: 1.25;
 color: #111;
 vertical-align: top;
 
-/* WICHTIG: Namen in Abwesenheiten sauber umbrechen */
-white-space: normal !important;
-overflow-wrap: anywhere !important;
-word-break: normal !important;
-}
-
-.absence td:nth-child(2){
-white-space: normal !important;
-overflow-wrap: anywhere !important;
-word-break: normal !important;
+/* EINZIGE ÄNDERUNG: vorhandene Zeilenumbrüche beibehalten */
+white-space: pre-line;
 }
 
 .absence td:first-child{
@@ -406,18 +398,23 @@ print-color-adjust: exact;
 }
 """
 
+
 FORMATION_COORDS = {
 "4-2-3-1": {
-"GK":  {"top": 88, "left": 50},
-"LB":  {"top": 72, "left": 25},
-"CB1": {"top": 72, "left": 41},
-"CB2": {"top": 72, "left": 59},
-"RB":  {"top": 72, "left": 75},
-"DM1": {"top": 56, "left": 38},
-"DM2": {"top": 56, "left": 62},
-"LM":  {"top": 38, "left": 25},
-"AM":  {"top": 38, "left": 50},
-"RM":  {"top": 38, "left": 75},
-"ST":  {"top": 18, "left": 50},
+    "GK":  {"top": 88, "left": 50},
+
+    "LB":  {"top": 72, "left": 25},
+    "CB1": {"top": 72, "left": 41},
+    "CB2": {"top": 72, "left": 59},
+    "RB":  {"top": 72, "left": 75},
+
+    "DM1": {"top": 56, "left": 38},
+    "DM2": {"top": 56, "left": 62},
+
+    "LM":  {"top": 38, "left": 25},
+    "AM":  {"top": 38, "left": 50},
+    "RM":  {"top": 38, "left": 75},
+
+    "ST":  {"top": 18, "left": 50},
 }
 }
