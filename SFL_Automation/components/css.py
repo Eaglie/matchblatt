@@ -29,7 +29,6 @@ body{
     align-items: center;
     padding: 5px 20px;
     border: 1px solid #0b2f6b;
-
     border-radius: 10px 10px 0 0;
     overflow: hidden;
 }
@@ -56,6 +55,7 @@ body{
     font-weight: 400;
     color: rgba(255,255,255,.78);
 }
+
 .header_label{
     color: #ffffff;
     font-weight: 600;
@@ -183,8 +183,6 @@ body{
     justify-content:center;
 }
 
-
-
 .formation{
     text-align: center;
 }
@@ -246,7 +244,6 @@ body{
     transform: translate(-50%, -50%);
 }
 
-/* Strafraum Oben (Gegnerseite) */
 .penalty_top{
     position: absolute;
     left: 20%;
@@ -257,7 +254,6 @@ body{
     border-top: none;
 }
 
-/* Strafraum Unten (Eigene Seite mit Torwart) */
 .penalty_bottom{
     position: absolute;
     left: 20%;
@@ -268,7 +264,6 @@ body{
     border-bottom: none;
 }
 
-/* Torraum Oben */
 .goalbox_top{
     position: absolute;
     left: 35%;
@@ -279,7 +274,6 @@ body{
     border-top: none;
 }
 
-/* Torraum Unten */
 .goalbox_bottom{
     position: absolute;
     left: 35%;
@@ -313,20 +307,43 @@ body{
 }
 
 .corner_top_left {
-    position: absolute; top: -8px; left: -8px; width: 16px; height: 16px;
-    border: 1.5px solid #444; border-radius: 50%;
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #444;
+    border-radius: 50%;
 }
+
 .corner_top_right {
-    position: absolute; top: -8px; right: -8px; width: 16px; height: 16px;
-    border: 1.5px solid #444; border-radius: 50%;
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #444;
+    border-radius: 50%;
 }
+
 .corner_bottom_left {
-    position: absolute; bottom: -8px; left: -8px; width: 16px; height: 16px;
-    border: 1.5px solid #444; border-radius: 50%;
+    position: absolute;
+    bottom: -8px;
+    left: -8px;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #444;
+    border-radius: 50%;
 }
+
 .corner_bottom_right {
-    position: absolute; bottom: -8px; right: -8px; width: 16px; height: 16px;
-    border: 1.5px solid #444; border-radius: 50%;
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #444;
+    border-radius: 50%;
 }
 
 .player{
@@ -348,7 +365,6 @@ body{
     background:none;
     border:none;
     box-shadow:none;
-
     font-size:12px;
     font-weight:700;
     line-height:1;
@@ -361,7 +377,6 @@ body{
     background:none;
     border:none;
     box-shadow:none;
-
     font-size:11px;
     font-weight:700;
     line-height:1.1;
