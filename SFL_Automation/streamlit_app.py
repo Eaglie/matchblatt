@@ -30,29 +30,21 @@ gast_url = st.text_input(
 if st.button("MATCHBLATT ERSTELLEN"):
 
     if not sfl_url.strip():
-        st.error(
-            "Bitte die SFL Matchcenter URL eingeben."
-        )
+        st.error("Bitte die SFL Matchcenter URL eingeben.")
         st.stop()
 
     if not heim_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Heimteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
         st.stop()
 
     if not gast_url.strip():
-        st.error(
-            "Bitte die Transfermarkt-URL des Gastteams eingeben."
-        )
+        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
         st.stop()
 
     try:
 
         with st.spinner("Lade SFL..."):
-            sfl = lade_sfl(
-                sfl_url.strip()
-            )
+            sfl = lade_sfl(sfl_url.strip())
 
         with st.spinner("Lade Heimteam..."):
             heim = lade_transfermarkt(
@@ -84,7 +76,6 @@ if st.button("MATCHBLATT ERSTELLEN"):
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # Fertiges Matchblatt direkt unterhalb anzeigen
         st.iframe(
             report_path,
             height=1800,
