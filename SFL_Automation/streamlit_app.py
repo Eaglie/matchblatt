@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+import streamlit.components.v1 as components
 
 from sfl import lade_sfl
 from transfermarkt import lade_transfermarkt
@@ -10,6 +11,7 @@ st.set_page_config(
     page_title="Matchblatt",
     layout="wide"
 )
+
 
 st.title("MATCHBLATT")
 
@@ -82,9 +84,14 @@ if st.button("MATCHBLATT ERSTELLEN"):
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        st.iframe(
-            report_path,
-            height=2200
+        html_content = report_path.read_text(
+            encoding="utf-8"
+        )
+
+        components.html(
+            html_content,
+            height=2200,
+            scrolling=True
         )
 
     except Exception as e:
