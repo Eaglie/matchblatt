@@ -125,7 +125,7 @@ def erstelle_report(sfl, heim, gast):
 
 {team_block(
     sfl.get("heim",""),
-    gast,
+    heim,
     sfl.get("heim_abwesend", {})
 )}
 
@@ -133,7 +133,7 @@ def erstelle_report(sfl, heim, gast):
 
 {team_block(
     sfl.get("gast",""),
-    heim,
+    gast,
     sfl.get("gast_abwesend", {})
 )}
 
