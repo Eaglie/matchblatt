@@ -37,7 +37,21 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .corner_bottom_left{position:absolute;bottom:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .corner_bottom_right{position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;}
-.player_number{font-size:12px;font-weight:700;line-height:1;color:#111;}
+.player_number{
+    width:36px;
+    height:36px;
+    margin:0;
+    padding:0;
+    border-radius:50%;
+    background:#000;
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+    font-weight:700;
+    line-height:1;
+}
 .player_name{margin-top:2px;padding:0;font-size:11px;font-weight:700;line-height:1.1;color:#111;text-align:center;white-space:nowrap;}
 .player_position{display:none;}
 html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
