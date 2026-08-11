@@ -94,27 +94,32 @@ def lade_sfl(url):
             "Keine gültige SFL Matchcenter URL."
         )
 
-    json_url = (
-        "https://sfl.ch/_next/data/"
-        "Y-9NZGIm1S6FvFeQABSly/"
-        f"de/match-center/{opta_id}.json"
-        f"?optaId={opta_id}"
-    )
+    # Die SFL liefert die Matchdaten aktuell direkt in der
+    # HTML-Seite im __NEXT_DATA__-Script. Die alte, fest
+    # eingebaute _next/data-Build-ID ist nicht mehr zuverlässig.
 
     response = requests.get(
-        json_url,
+        url,
         headers={
-            "x-nextjs-data": "1",
-            "User-Agent": "Mozilla/5.0"
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "de",
+            "User-Agent": "Mozilla/5.0",
         },
         timeout=30,
     )
 
     response.raise_for_status()
 
-    data = response.json()
+    soup = BeautifulSoup(response.text, "html.parser")
+    next_data = soup.find("script", id="__NEXT_DATA__")
 
-    match_data = data["pageProps"]["matchData"]
+    if next_data is None or not next_data.string:
+        raise ValueError(
+            "SFL: __NEXT_DATA__ mit Matchdaten nicht gefunden."
+        )
+
+    data = json.loads(next_data.string)
+    match_data = data["props"]["pageProps"]["matchData"]
 
     # ---------------------------------------------------------
     # SCHIEDSRICHTER / VAR
@@ -217,20 +222,14 @@ def lade_sfl(url):
             "html.parser"
         )
 
-        text = soup.get_text(
-            "\n",
-            strip=True
-        )
+        # -----------------------------------------------------
+        # Alle p-Elemente des gefundenen SFL-Blocks
+        # -----------------------------------------------------
 
-        zeilen = [
-            re.sub(
-                r"\s+",
-                " ",
-                zeile
-            ).strip()
-            for zeile in text.splitlines()
-            if zeile.strip()
-        ]
+        elemente = soup.find_all("p")
+
+        if not elemente:
+            return leeres_ergebnis
 
         # -----------------------------------------------------
         # ABWESENDE SPIELER finden
@@ -238,9 +237,15 @@ def lade_sfl(url):
 
         absenzen_start = None
 
-        for i, zeile in enumerate(zeilen):
+        for i, element in enumerate(elemente):
 
-            if zeile.upper() == "ABWESENDE SPIELER":
+            text = element.get_text(
+                " ",
+                strip=True
+            )
+
+            if text.upper() == "ABWESENDE SPIELER":
+
                 absenzen_start = i
                 break
 
@@ -255,13 +260,21 @@ def lade_sfl(url):
 
         for i in range(
             absenzen_start + 1,
-            len(zeilen)
+            len(elemente)
         ):
 
+            element = elemente[i]
+
+            text = element.get_text(
+                " ",
+                strip=True
+            )
+
             if (
-                zeilen[i].strip().lower()
+                text.lower()
                 == teamname.strip().lower()
             ):
+
                 team_index = i
                 break
 
@@ -273,12 +286,12 @@ def lade_sfl(url):
         # -----------------------------------------------------
 
         kategorien = {
-            "Gesperrt": "gesperrt",
-            "Verletzt": "verletzt",
-            "Krank": "krank",
-            "Fraglich": "fraglich",
-            "Nicht im Aufgebot": "nicht_im_kader"
-        }
+    "Gesperrt": "gesperrt",
+    "Verletzt": "verletzt",
+    "Krank": "krank",
+    "Fraglich": "fraglich",
+    "Nicht im Aufgebot": "nicht_im_kader"
+}
 
         ergebnis = leeres_ergebnis.copy()
 
@@ -286,21 +299,47 @@ def lade_sfl(url):
         # Teamblock auslesen
         # -----------------------------------------------------
 
-        for zeile in zeilen[team_index + 1:]:
+        for element in elemente[team_index + 1:]:
 
-            if not zeile:
+            text = element.get_text(
+                " ",
+                strip=True
+            )
+
+            if not text:
                 continue
 
+            # Ein neues <strong>-Element nach dem Team
+            # bedeutet den Beginn des nächsten Blocks.
+            strong = element.find("strong")
+
+            if strong is not None:
+
+                neuer_titel = strong.get_text(
+                    " ",
+                    strip=True
+                )
+
+                if (
+                    neuer_titel
+                    and neuer_titel.lower()
+                    != teamname.strip().lower()
+                ):
+                    break
+
+            # -------------------------------------------------
             # Kategorie erkennen
+            # -------------------------------------------------
+
             for bezeichnung, schluessel in kategorien.items():
 
                 prefix = bezeichnung + ":"
 
-                if zeile.lower().startswith(
+                if text.lower().startswith(
                     prefix.lower()
                 ):
 
-                    wert = zeile[
+                    wert = text[
                         len(prefix):
                     ].strip()
 
@@ -312,28 +351,11 @@ def lade_sfl(url):
 
                         ergebnis[schluessel] = [
                             name.strip()
-                            for name in re.split(
-                                r",\s*",
-                                wert
-                            )
+                            for name in wert.split(",")
                             if name.strip()
                         ]
 
                     break
-
-            # Nach dem nächsten Team nicht weiterlaufen.
-            if (
-                zeile.strip().lower()
-                != teamname.strip().lower()
-                and ":" not in zeile
-                and not any(
-                    zeile.lower().startswith(
-                        (k + ":").lower()
-                    )
-                    for k in kategorien
-                )
-            ):
-                break
 
         return ergebnis
 
