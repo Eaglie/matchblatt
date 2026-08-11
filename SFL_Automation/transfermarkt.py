@@ -2,6 +2,7 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
 import unicodedata
+from datetime import datetime
 
 
 def _normalize_team(name):
@@ -347,62 +348,70 @@ def _extract_score(
     soup
 ):
     """
-    Holt das Endresultat zuverlässig aus der Transfermarkt-Seite.
-
-    Das Resultat wird zuerst im zentralen Score-Bereich gesucht.
-    Falls Transfermarkt dort das Ergebnis nicht als eigenen Textknoten
-    liefert, wird nach einem eingebetteten Spielstand gesucht.
-    Uhrzeiten wie 16:30 werden ausgeschlossen.
+    Holt das Endresultat.
     """
 
-    kandidaten = []
+    raw_resultat = ""
 
     score_box = soup.select_one(
         ".sb-core-info"
     )
 
     if score_box:
-        kandidaten.extend(
-            list(score_box.stripped_strings)
+
+        for txt in score_box.stripped_strings:
+
+            if re.fullmatch(
+                r"\d+:\d+",
+                txt
+            ):
+
+                a, b = map(
+                    int,
+                    txt.split(":")
+                )
+
+                if (
+                    a <= 20
+                    and b <= 20
+                ):
+
+                    raw_resultat = txt
+                    break
+
+    if not raw_resultat:
+
+        for txt in soup.stripped_strings:
+
+            if re.fullmatch(
+                r"\d+:\d+",
+                txt
+            ):
+
+                a, b = map(
+                    int,
+                    txt.split(":")
+                )
+
+                if (
+                    a <= 10
+                    and b <= 10
+                ):
+
+                    raw_resultat = txt
+                    break
+
+    if not raw_resultat:
+        raise ValueError(
+            "Transfermarkt: Endresultat "
+            "konnte nicht eindeutig gefunden werden."
         )
 
-    # Danach nur noch sichtbare Texte als Fallback durchsuchen.
-    kandidaten.extend(
-        list(soup.stripped_strings)
-    )
-
-    gesehen = set()
-
-    for text in kandidaten:
-
-        text = str(text).strip()
-
-        if not text or text in gesehen:
-            continue
-
-        gesehen.add(text)
-
-        matches = re.findall(
-            r"(?<!\d)(\d{1,2})\s*:\s*(\d{1,2})(?!\d)",
-            text
+    return tuple(
+        map(
+            int,
+            raw_resultat.split(":")
         )
-
-        for a, b in matches:
-
-            a = int(a)
-            b = int(b)
-
-            # Keine Uhrzeiten wie 16:30.
-            if b >= 60:
-                continue
-
-            # Plausibler Fussball-Spielstand.
-            if a <= 20 and b <= 20:
-                return a, b
-
-    raise ValueError(
-        "Transfermarkt: Endresultat "
-        "konnte nicht eindeutig gefunden werden."
     )
 
 
@@ -567,6 +576,255 @@ def _extract_players(
 
     return spieler
 
+
+
+def _extract_last_match_from_schedule(
+    soup,
+    teamname,
+    current_url
+):
+    """
+    Holt das letzte bereits gespielte Spiel des Teams aus dem
+    Transfermarkt-Spielplan. Das aktuell eingegebene Spiel wird
+    anhand seiner Spiel-ID ausgeschlossen.
+
+    Wichtig: Das Resultat wird aus der Ergebnis-Spalte gelesen,
+    niemals aus dem gesamten Zeilentext, weil dort auch die Uhrzeit
+    im Format 16:30 steht.
+    """
+
+    current_match = re.search(
+        r"spielbericht/(\d+)",
+        current_url or ""
+    )
+    current_match_id = (
+        current_match.group(1)
+        if current_match
+        else ""
+    )
+
+    team_link = None
+
+    for a in soup.select("a[href]"):
+        href = a.get("href", "")
+        text = a.get_text(" ", strip=True)
+
+        if "/startseite/verein/" not in href:
+            continue
+
+        if _team_match(teamname, text):
+            team_link = href
+            break
+
+    if not team_link:
+        return None
+
+    id_match = re.search(
+        r"/startseite/verein/(\d+)",
+        team_link
+    )
+    if not id_match:
+        return None
+
+    verein_id = id_match.group(1)
+
+    slug_match = re.search(
+        r"/([^/]+)/startseite/verein/",
+        team_link
+    )
+    if not slug_match:
+        return None
+
+    slug = slug_match.group(1)
+
+    season_match = re.search(
+        r"saison_id/(\d{4})",
+        team_link
+    )
+    saison = (
+        season_match.group(1)
+        if season_match
+        else str(datetime.now().year)
+    )
+
+    schedule_url = (
+        "https://www.transfermarkt.de/"
+        f"{slug}/spielplan/verein/{verein_id}/"
+        f"saison_id/{saison}"
+    )
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(
+                    schedule_url,
+                    wait_until="domcontentloaded",
+                    timeout=30000
+                )
+                try:
+                    page.wait_for_load_state(
+                        "networkidle",
+                        timeout=10000
+                    )
+                except Exception:
+                    pass
+                schedule_soup = BeautifulSoup(
+                    page.content(),
+                    "html.parser"
+                )
+            finally:
+                browser.close()
+    except Exception:
+        return None
+
+    kandidaten = []
+
+    for row in schedule_soup.select("tr"):
+        row_text = row.get_text(" ", strip=True)
+        if not row_text:
+            continue
+
+        # Aktuelles Spiel niemals als "letztes Spiel" verwenden.
+        if current_match_id:
+            row_ids = re.findall(
+                r"spielbericht/(\d+)",
+                " ".join(
+                    a.get("href", "")
+                    for a in row.select("a[href]")
+                )
+            )
+            if current_match_id in row_ids:
+                continue
+
+        date_match = re.search(
+            r"(\d{2}\.\d{2}\.\d{2,4})",
+            row_text
+        )
+        if not date_match:
+            continue
+
+        date_text = date_match.group(1)
+        date_format = (
+            "%d.%m.%Y"
+            if len(date_text.rsplit(".", 1)[1]) == 4
+            else "%d.%m.%y"
+        )
+
+        try:
+            match_date = datetime.strptime(
+                date_text,
+                date_format
+            )
+        except ValueError:
+            continue
+
+        # Vereinslinks liefern die beiden Teams zuverlässig.
+        team_links = []
+        for a in row.select("a[href]"):
+            href = a.get("href", "")
+            text = a.get_text(" ", strip=True)
+            if "/startseite/verein/" in href and text:
+                if text not in team_links:
+                    team_links.append(text)
+
+        if len(team_links) < 2:
+            continue
+
+        own_index = None
+        for i, text in enumerate(team_links):
+            if _team_match(teamname, text):
+                own_index = i
+                break
+
+        if own_index is None:
+            continue
+
+        opponent = ""
+        for i, text in enumerate(team_links):
+            if i != own_index and not _team_match(teamname, text):
+                opponent = text
+                break
+
+        if not opponent:
+            continue
+
+        # RESULTAT NUR AUS DER ERGEBNIS-ZELLE DES SPIELBERICHTS.
+        # Uhrzeiten wie 16:30 werden nicht als Resultat verwendet.
+
+        score_text = ""
+
+        for cell in row.select("td"):
+
+            if not cell.select_one('a[href*="/spielbericht/"]'):
+                continue
+
+            matches = re.findall(
+                r"(?<!\d)(\d{1,2})\s*:\s*(\d{1,2})(?!\d)",
+                cell.get_text(" ", strip=True)
+            )
+
+            for a, b in matches:
+
+                a = int(a)
+                b = int(b)
+
+                # Keine Uhrzeit wie 16:30
+                if b >= 60:
+                    continue
+
+                # Plausibler Fussball-Spielstand
+                if a <= 20 and b <= 20:
+                    score_text = f"{a}:{b}"
+
+            if score_text:
+                break
+
+        if not score_text:
+            continue
+
+        # Ort-Spalte: H = eigenes Team zuhause, A = auswärts.
+        ha = None
+        for cell in cells:
+            cell_text = cell.get_text(" ", strip=True)
+            if cell_text in ("H", "A"):
+                ha = cell_text
+                break
+
+        if ha not in ("H", "A"):
+            continue
+
+        if ha == "H":
+            eigenes = f"{a}:{b}"
+            eigene_tore, fremde_tore = a, b
+        else:
+            eigenes = f"{b}:{a}"
+            eigene_tore, fremde_tore = b, a
+
+        if eigene_tore > fremde_tore:
+            ausgang = "Sieg"
+        elif eigene_tore < fremde_tore:
+            ausgang = "Niederlage"
+        else:
+            ausgang = "Unentschieden"
+
+        kandidaten.append({
+            "datum": match_date,
+            "resultat": eigenes,
+            "gegner": opponent,
+            "ausgang": ausgang,
+        })
+
+    if not kandidaten:
+        return None
+
+    kandidaten.sort(
+        key=lambda x: x["datum"],
+        reverse=True
+    )
+
+    return kandidaten[0]
 
 def lade_transfermarkt(
     url,
@@ -734,6 +992,18 @@ def lade_transfermarkt(
         is_heim,
         teamname
     )
+
+    # LETZTES SPIEL: Resultat und Gegner aus dem Vereins-Spielplan.
+    letztes_spiel = _extract_last_match_from_schedule(
+        soup,
+        teamname,
+        url
+    )
+
+    if letztes_spiel:
+        eigenes_resultat = letztes_spiel["resultat"]
+        gegner = letztes_spiel["gegner"]
+        ausgang = letztes_spiel["ausgang"]
 
     # ---------------------------------------------------------
     # ABSCHLIESSENDE SICHERHEITSPRÜFUNGEN
