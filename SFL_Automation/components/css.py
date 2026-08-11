@@ -356,17 +356,24 @@ z-index: 2;
 }
 
 .player_number{
-width: auto;
-height: auto;
-margin: 0;
-padding: 0;
-background: none;
-border: none;
-box-shadow: none;
-font-size: 12px;
-font-weight: 700;
-line-height: 1;
-color: #111;
+    width: 50px;
+    height: 50px;
+    margin: 0;
+    padding: 0;
+
+    background: #000;
+    border: none;
+    border-radius: 50%;
+    box-shadow: none;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
 }
 
 .player_name{
