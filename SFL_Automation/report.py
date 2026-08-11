@@ -7,10 +7,10 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .page{width:210mm;min-height:297mm;margin:10mm auto;background:white;padding:10mm 15mm;box-shadow:0 0 15px rgba(0,0,0,.15);}
 .header{background:#0b2f6b;color:white;display:flex;justify-content:center;align-items:center;padding:5px 20px;border:1px solid #0b2f6b;border-radius:10px 10px 0 0;overflow:hidden;}
 .title{text-align:center;}
-.title h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.5px;color:#fff;}
+.title h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.5px;color:#fff;text-transform:uppercase;}
 .title h2{margin:8px 0 0;font-size:13px;font-weight:400;color:rgba(255,255,255,.78);}
 .header_label{color:#fff;font-weight:600;}
-.header_value{color:#fff;}
+.header_value{color:#fff;text-transform:uppercase;}
 .info{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:13px;}
 .info td{border:1px solid #d7d7d7;padding:8px 12px;}
 .info td:first-child{width:200px;background:#f3f3f3;font-weight:bold;}
