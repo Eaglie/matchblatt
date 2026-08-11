@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import re
 import unicodedata
 from datetime import datetime
-from urllib.parse import urljoin
 
 
 def _normalize_team(name):
@@ -947,10 +946,10 @@ def lade_transfermarkt(
     # ---------------------------------------------------------
     # LETZTES SPIEL
     # ---------------------------------------------------------
-    # Die Startaufstellung kommt weiterhin aus der eingegebenen
-    # Transfermarkt-Spielseite. Für "Letztes Spiel" darf diese
-    # Seite aber nicht verwendet werden, weil sie das aktuelle
-    # Spiel bzw. die aktuelle Begegnung beschreibt.
+    # Die aktuelle Spielseite liefert die Startaufstellung.
+    # Resultat und Gegner für "Letztes Spiel" kommen dagegen
+    # aus dem Vereins-Spielplan und schliessen das aktuelle
+    # Spiel anhand seiner Transfermarkt-Spiel-ID aus.
     letztes_spiel = _extract_last_match_from_schedule(
         soup,
         teamname,
