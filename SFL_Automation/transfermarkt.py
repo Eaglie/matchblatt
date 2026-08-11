@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import re
 import unicodedata
 from datetime import datetime
+from urllib.parse import urljoin
 
 
 def _normalize_team(name):
@@ -583,8 +584,13 @@ def _extract_last_match_from_schedule(
     current_url
 ):
     """
-    Holt das tatsächlich letzte bereits gespielte Spiel des Teams.
-    Das aktuelle Spiel wird anhand seiner Transfermarkt-Spiel-ID ausgeschlossen.
+    Holt das letzte bereits gespielte Spiel des Teams aus dem
+    Transfermarkt-Spielplan. Das aktuell eingegebene Spiel wird
+    anhand seiner Spiel-ID ausgeschlossen.
+
+    Wichtig: Das Resultat wird aus den Ergebnis-Zellen gelesen,
+    niemals aus dem gesamten Zeilentext, weil dort auch die Uhrzeit
+    im Format 16:30 stehen kann.
     """
 
     current_match = re.search(
@@ -651,18 +657,22 @@ def _extract_last_match_from_schedule(
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                schedule_page = browser.new_page()
-                schedule_page.goto(
+                page = browser.new_page()
+                page.goto(
                     schedule_url,
                     wait_until="domcontentloaded",
                     timeout=30000
                 )
-                schedule_page.wait_for_load_state(
-                    "domcontentloaded",
-                    timeout=10000
-                )
+                try:
+                    page.wait_for_load_state(
+                        "networkidle",
+                        timeout=10000
+                    )
+                except Exception:
+                    pass
+
                 schedule_soup = BeautifulSoup(
-                    schedule_page.content(),
+                    page.content(),
                     "html.parser"
                 )
             finally:
@@ -674,9 +684,11 @@ def _extract_last_match_from_schedule(
 
     for row in schedule_soup.select("tr"):
         row_text = row.get_text(" ", strip=True)
+
         if not row_text:
             continue
 
+        # Das aktuell eingegebene Spiel niemals als letztes Spiel verwenden.
         if current_match_id:
             row_ids = re.findall(
                 r"spielbericht/(\d+)",
@@ -685,6 +697,7 @@ def _extract_last_match_from_schedule(
                     for a in row.select("a[href]")
                 )
             )
+
             if current_match_id in row_ids:
                 continue
 
@@ -692,12 +705,8 @@ def _extract_last_match_from_schedule(
             r"(\d{2}\.\d{2}\.\d{2,4})",
             row_text
         )
-        score_match = re.search(
-            r"(?<!\d)(\d{1,2}:\d{1,2})(?!\d)",
-            row_text
-        )
 
-        if not date_match or not score_match:
+        if not date_match:
             continue
 
         date_text = date_match.group(1)
@@ -715,34 +724,81 @@ def _extract_last_match_from_schedule(
         except ValueError:
             continue
 
-        links = []
+        # Die beiden Vereinslinks liefern Heim- und Gastteam zuverlässig.
+        team_links = []
+
         for a in row.select("a[href]"):
             href = a.get("href", "")
             text = a.get_text(" ", strip=True)
+
             if "/startseite/verein/" in href and text:
-                links.append(text)
+                if text not in team_links:
+                    team_links.append(text)
+
+        if len(team_links) < 2:
+            continue
+
+        own_index = None
+
+        for i, text in enumerate(team_links):
+            if _team_match(teamname, text):
+                own_index = i
+                break
+
+        if own_index is None:
+            continue
 
         opponent = ""
-        for text in links:
-            if not _team_match(teamname, text):
+
+        for i, text in enumerate(team_links):
+            if i != own_index and not _team_match(teamname, text):
                 opponent = text
                 break
 
         if not opponent:
             continue
 
+        # Resultat ausschließlich aus den Tabellenzellen lesen.
+        # So wird z.B. 16:30 nicht mit einem Spielresultat verwechselt.
+        score_candidates = []
+        cells = row.select("td")
+
+        for cell in cells:
+            cell_text = cell.get_text(" ", strip=True)
+
+            if cell_text in ("-:-", "–:–", "—:—", ""):
+                continue
+
+            matches = re.findall(
+                r"(?<!\d)(\d{1,2}:\d{1,2})(?!\d)",
+                cell_text
+            )
+            score_candidates.extend(matches)
+
+        if not score_candidates:
+            continue
+
+        score_text = score_candidates[-1]
+
+        try:
+            a, b = map(
+                int,
+                score_text.split(":")
+            )
+        except ValueError:
+            continue
+
+        # H = eigenes Team zuhause, A = eigenes Team auswärts.
         ha = None
-        for token in re.findall(r"(?<!\w)([HA])(?!\w)", row_text):
-            ha = token
-            break
+
+        for cell in cells:
+            cell_text = cell.get_text(" ", strip=True)
+            if cell_text in ("H", "A"):
+                ha = cell_text
+                break
 
         if ha not in ("H", "A"):
             continue
-
-        a, b = map(
-            int,
-            score_match.group(1).split(":")
-        )
 
         if ha == "H":
             eigenes = f"{a}:{b}"
@@ -946,10 +1002,10 @@ def lade_transfermarkt(
     # ---------------------------------------------------------
     # LETZTES SPIEL
     # ---------------------------------------------------------
-    # Die aktuelle Spielseite liefert die Startaufstellung.
-    # Resultat und Gegner für "Letztes Spiel" kommen dagegen
-    # aus dem Vereins-Spielplan und schliessen das aktuelle
-    # Spiel anhand seiner Transfermarkt-Spiel-ID aus.
+    # Die Startaufstellung kommt weiterhin aus der eingegebenen
+    # Transfermarkt-Spielseite. Für "Letztes Spiel" darf diese
+    # Seite aber nicht verwendet werden, weil sie das aktuelle
+    # Spiel bzw. die aktuelle Begegnung beschreibt.
     letztes_spiel = _extract_last_match_from_schedule(
         soup,
         teamname,
