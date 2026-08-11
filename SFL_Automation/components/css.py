@@ -355,25 +355,20 @@ text-align: center;
 z-index: 2;
 }
 
-.player_number{
-    width: 50px;
-    height: 50px;
-    margin: 0;
-    padding: 0;
-
-    background: #000;
-    border: none;
-    border-radius: 50%;
-    box-shadow: none;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 1;
-    color: #fff;
+.player_circle{
+    width:36px;
+    height:36px;
+    margin:auto;
+    border-radius:50%;
+    background:#111;
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+    font-weight:bold;
+    border:2px solid white;
+    box-shadow:0 3px 8px rgba(0,0,0,.25);
 }
 
 .player_name{
