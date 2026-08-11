@@ -37,20 +37,20 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .corner_bottom_left{position:absolute;bottom:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .corner_bottom_right{position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;}
-.player_number{
+.player_circle{
     width:36px;
     height:36px;
-    margin:0;
-    padding:0;
+    margin:auto;
     border-radius:50%;
-    background:#000;
-    color:#fff;
+    background:#111;
+    color:white;
     display:flex;
     align-items:center;
     justify-content:center;
     font-size:15px;
-    font-weight:700;
-    line-height:1;
+    font-weight:bold;
+    border:2px solid white;
+    box-shadow:0 3px 8px rgba(0,0,0,.25);
 }
 .player_name{margin-top:2px;padding:0;font-size:11px;font-weight:700;line-height:1.1;color:#111;text-align:center;white-space:nowrap;}
 .player_position{display:none;}
@@ -98,7 +98,7 @@ def draw_players(spieler):
         top = p.get("top", p.get("y", 50))
         html_parts.append(f'''
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
-    <div class="player_number">{html.escape(str(nummer))}</div>
+    <div class="player_circle">{html.escape(str(nummer))}</div>
     <div class="player_name">{html.escape(str(name))}</div>
     <div class="player_position"></div>
 </div>''')
