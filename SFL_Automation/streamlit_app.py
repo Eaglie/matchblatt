@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
+import base64
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -120,12 +121,28 @@ if starten:
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
+html_b64 = base64.b64encode(
+    html.encode("utf-8")
+).decode("ascii")
 
-        components.html(
-            html,
-            height=1900,
-            scrolling=True
-        )
+st.markdown(
+    f'''
+    <a href="data:text/html;base64,{html_b64}"
+       target="_blank"
+       style="
+           display:inline-block;
+           padding:0.5rem 1rem;
+           background:#ff4b4b;
+           color:white;
+           text-decoration:none;
+           border-radius:0.25rem;
+           font-weight:600;
+       ">
+       MATCHBLATT IN NEUEM TAB ÖFFNEN
+    </a>
+    ''',
+    unsafe_allow_html=True
+)
 
     except Exception as e:
         st.error(
