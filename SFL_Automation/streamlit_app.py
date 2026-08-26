@@ -28,6 +28,7 @@ def lade_tm_cached(url, teamname):
 
 
 def erstelle_pdf(html):
+
     pdf_path = Path("matchblatt.pdf")
 
     with sync_playwright() as p:
@@ -59,14 +60,29 @@ def erstelle_pdf(html):
                     print-color-adjust: exact !important;
                 }
 
-                .player {
+                /*
+                 * SPIELER-CONTAINER:
+                 * keine Fläche, kein Rahmen,
+                 * kein Schatten, keine Umrandung
+                 */
+                .player,
+                .player_name,
+                .player_position {
                     background: transparent !important;
                     background-color: transparent !important;
+                    border: none !important;
+                    box-shadow: none !important;
+                    outline: none !important;
                 }
 
-                .player_name {
-                    background: transparent !important;
-                    background-color: transparent !important;
+                /*
+                 * DER SPIELERKREIS BLEIBT SICHTBAR
+                 */
+                .player_circle {
+                    background: #111 !important;
+                    background-color: #111 !important;
+                    border: 2px solid white !important;
+                    box-shadow: 0 3px 8px rgba(0,0,0,.25) !important;
                 }
             """
         )
