@@ -1,6 +1,7 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from pathlib import Path
+import shutil
+import time
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -26,8 +27,6 @@ def lade_tm_cached(url, teamname):
     return lade_transfermarkt(url, teamname)
 
 
-# Formular statt normalem st.button:
-# Dadurch wird der Start eindeutig mit EINEM Submit ausgelöst.
 with st.form("matchblatt_form", clear_on_submit=False):
 
     starten = st.form_submit_button(
@@ -87,9 +86,6 @@ if starten:
             text="Erstelle Matchblatt..."
         )
 
-        # Transfermarkt liefert bereits das tatsächliche
-        # letzte Spiel inklusive Gegner und Resultat.
-        # Diese Daten NICHT mit dem aktuellen SFL-Gegner überschreiben.
         erstelle_report(
             sfl,
             heim,
@@ -112,6 +108,19 @@ if starten:
                 "report.html ist leer."
             )
 
+        # Statische Datei für den direkten Browser-Aufruf
+        static_dir = Path("static")
+        static_dir.mkdir(
+            exist_ok=True
+        )
+
+        static_report = static_dir / "report.html"
+
+        shutil.copyfile(
+            report_path,
+            static_report
+        )
+
         progress.progress(
             100,
             text="Matchblatt fertig."
@@ -121,45 +130,27 @@ if starten:
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # Matchblatt als Blob im Browser öffnen.
-        # Das HTML selbst wird dabei NICHT verändert.
-        components.html(
-            f"""
-            <script>
-                const html = {html!r};
+        # Direkter Aufruf der echten HTML-Datei.
+        # Dadurch kein iframe / srcdoc / Blob.
+        cache_buster = int(time.time())
 
-                const blob = new Blob(
-                    [html],
-                    {{ type: "text/html;charset=utf-8" }}
-                );
-
-                const url = URL.createObjectURL(blob);
-
-                const button = document.createElement("button");
-
-                button.innerText =
-                    "MATCHBLATT IN NEUEM TAB ÖFFNEN";
-
-                button.style.cssText = `
-                    display: inline-block;
-                    padding: 14px 24px;
-                    background: #ff4b4b;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                `;
-
-                button.onclick = function() {{
-                    window.open(url, "_blank");
-                }};
-
-                document.body.appendChild(button);
-            </script>
-            """,
-            height=70
+        st.markdown(
+            f'''
+            <a href="app/static/report.html?v={cache_buster}"
+               target="_blank"
+               style="
+                   display:inline-block;
+                   padding:0.5rem 1rem;
+                   background:#ff4b4b;
+                   color:white;
+                   text-decoration:none;
+                   border-radius:0.25rem;
+                   font-weight:600;
+               ">
+               MATCHBLATT IN NEUEM TAB ÖFFNEN
+            </a>
+            ''',
+            unsafe_allow_html=True
         )
 
     except Exception as e:
