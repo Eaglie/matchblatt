@@ -1,7 +1,7 @@
 import streamlit as st
 from pathlib import Path
-import shutil
-import time
+from playwright.sync_api import sync_playwright
+
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -27,7 +27,48 @@ def lade_tm_cached(url, teamname):
     return lade_transfermarkt(url, teamname)
 
 
-with st.form("matchblatt_form", clear_on_submit=False):
+def erstelle_pdf(html):
+    pdf_path = Path("matchblatt.pdf")
+
+    with sync_playwright() as p:
+
+        browser = p.chromium.launch(
+            headless=True
+        )
+
+        page = browser.new_page(
+            viewport={
+                "width": 1200,
+                "height": 1600
+            }
+        )
+
+        page.set_content(
+            html,
+            wait_until="networkidle"
+        )
+
+        page.pdf(
+            path=str(pdf_path),
+            format="A4",
+            print_background=True,
+            margin={
+                "top": "0",
+                "right": "0",
+                "bottom": "0",
+                "left": "0"
+            }
+        )
+
+        browser.close()
+
+    return pdf_path
+
+
+with st.form(
+    "matchblatt_form",
+    clear_on_submit=False
+):
 
     starten = st.form_submit_button(
         "MATCHBLATT ERSTELLEN",
@@ -38,18 +79,25 @@ with st.form("matchblatt_form", clear_on_submit=False):
 if starten:
 
     if not sfl_url.strip():
-        st.error("Bitte die SFL Matchcenter URL eingeben.")
+        st.error(
+            "Bitte die SFL Matchcenter URL eingeben."
+        )
         st.stop()
 
     if not heim_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Heimteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Heimteams eingeben."
+        )
         st.stop()
 
     if not gast_url.strip():
-        st.error("Bitte die Transfermarkt-URL des Gastteams eingeben.")
+        st.error(
+            "Bitte die Transfermarkt-URL des Gastteams eingeben."
+        )
         st.stop()
 
     try:
+
         from report import erstelle_report
 
         progress = st.progress(
@@ -82,7 +130,7 @@ if starten:
         )
 
         progress.progress(
-            85,
+            80,
             text="Erstelle Matchblatt..."
         )
 
@@ -92,7 +140,9 @@ if starten:
             gast
         )
 
-        report_path = Path("report.html")
+        report_path = Path(
+            "report.html"
+        )
 
         if not report_path.exists():
             raise FileNotFoundError(
@@ -108,53 +158,43 @@ if starten:
                 "report.html ist leer."
             )
 
-        # Statische Datei für den direkten Browser-Aufruf
-        static_dir = Path("static")
-        static_dir.mkdir(
-            exist_ok=True
+        progress.progress(
+            90,
+            text="Erstelle PDF..."
         )
 
-        static_report = static_dir / "report.html"
-
-        shutil.copyfile(
-            report_path,
-            static_report
+        pdf_path = erstelle_pdf(
+            html
         )
+
+        if not pdf_path.exists():
+            raise FileNotFoundError(
+                "PDF wurde nicht erstellt."
+            )
+
+        pdf_data = pdf_path.read_bytes()
 
         progress.progress(
             100,
-            text="Matchblatt fertig."
+            text="PDF fertig."
         )
 
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        # Direkter Aufruf der echten HTML-Datei.
-        # Dadurch kein iframe / srcdoc / Blob.
-        cache_buster = int(time.time())
-
-        st.markdown(
-            f'''
-            <a href="app/static/report.html?v={cache_buster}"
-               target="_blank"
-               style="
-                   display:inline-block;
-                   padding:0.5rem 1rem;
-                   background:#ff4b4b;
-                   color:white;
-                   text-decoration:none;
-                   border-radius:0.25rem;
-                   font-weight:600;
-               ">
-               MATCHBLATT IN NEUEM TAB ÖFFNEN
-            </a>
-            ''',
-            unsafe_allow_html=True
+        st.download_button(
+            label="📄 MATCHBLATT ALS PDF HERUNTERLADEN",
+            data=pdf_data,
+            file_name="matchblatt.pdf",
+            mime="application/pdf",
+            type="primary"
         )
 
     except Exception as e:
+
         st.error(
             "❌ Fehler beim Erstellen des Matchblatts."
         )
+
         st.exception(e)
