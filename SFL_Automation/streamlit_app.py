@@ -48,6 +48,29 @@ def erstelle_pdf(html):
             wait_until="networkidle"
         )
 
+        page.emulate_media(
+            media="screen"
+        )
+
+        page.add_style_tag(
+            content="""
+                * {
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+
+                .player {
+                    background: transparent !important;
+                    background-color: transparent !important;
+                }
+
+                .player_name {
+                    background: transparent !important;
+                    background-color: transparent !important;
+                }
+            """
+        )
+
         page.pdf(
             path=str(pdf_path),
             format="A4",
