@@ -121,28 +121,29 @@ if starten:
         st.success(
             "✅ Matchblatt erfolgreich erstellt."
         )
-html_b64 = base64.b64encode(
-    html.encode("utf-8")
-).decode("ascii")
 
-st.markdown(
-    f'''
-    <a href="data:text/html;base64,{html_b64}"
-       target="_blank"
-       style="
-           display:inline-block;
-           padding:0.5rem 1rem;
-           background:#ff4b4b;
-           color:white;
-           text-decoration:none;
-           border-radius:0.25rem;
-           font-weight:600;
-       ">
-       MATCHBLATT IN NEUEM TAB ÖFFNEN
-    </a>
-    ''',
-    unsafe_allow_html=True
-)
+        html_b64 = base64.b64encode(
+            html.encode("utf-8")
+        ).decode("ascii")
+
+        st.markdown(
+            f'''
+            <a href="data:text/html;base64,{html_b64}"
+               target="_blank"
+               style="
+                   display:inline-block;
+                   padding:0.5rem 1rem;
+                   background:#ff4b4b;
+                   color:white;
+                   text-decoration:none;
+                   border-radius:0.25rem;
+                   font-weight:600;
+               ">
+               MATCHBLATT IN NEUEM TAB ÖFFNEN
+            </a>
+            ''',
+            unsafe_allow_html=True
+        )
 
     except Exception as e:
         st.error(
