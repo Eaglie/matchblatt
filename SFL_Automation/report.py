@@ -36,7 +36,7 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .corner_top_right{position:absolute;top:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .corner_bottom_left{position:absolute;bottom:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
 .corner_bottom_right{position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
-.player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;}
+.player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;background:none !important;border:none !important;box-shadow:none !important;outline:none !important;}
 .player_circle{
     width:36px;
     height:36px;
