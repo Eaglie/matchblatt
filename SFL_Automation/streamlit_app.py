@@ -1,7 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
-import base64
 
 st.set_page_config(
     page_title="Matchblatt",
@@ -122,27 +121,45 @@ if starten:
             "✅ Matchblatt erfolgreich erstellt."
         )
 
-        html_b64 = base64.b64encode(
-            html.encode("utf-8")
-        ).decode("ascii")
+        # Matchblatt als Blob im Browser öffnen.
+        # Das HTML selbst wird dabei NICHT verändert.
+        components.html(
+            f"""
+            <script>
+                const html = {html!r};
 
-        st.markdown(
-            f'''
-            <a href="data:text/html;base64,{html_b64}"
-               target="_blank"
-               style="
-                   display:inline-block;
-                   padding:0.5rem 1rem;
-                   background:#ff4b4b;
-                   color:white;
-                   text-decoration:none;
-                   border-radius:0.25rem;
-                   font-weight:600;
-               ">
-               MATCHBLATT IN NEUEM TAB ÖFFNEN
-            </a>
-            ''',
-            unsafe_allow_html=True
+                const blob = new Blob(
+                    [html],
+                    {{ type: "text/html;charset=utf-8" }}
+                );
+
+                const url = URL.createObjectURL(blob);
+
+                const button = document.createElement("button");
+
+                button.innerText =
+                    "MATCHBLATT IN NEUEM TAB ÖFFNEN";
+
+                button.style.cssText = `
+                    display: inline-block;
+                    padding: 14px 24px;
+                    background: #ff4b4b;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                `;
+
+                button.onclick = function() {{
+                    window.open(url, "_blank");
+                }};
+
+                document.body.appendChild(button);
+            </script>
+            """,
+            height=70
         )
 
     except Exception as e:
