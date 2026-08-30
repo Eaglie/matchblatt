@@ -577,7 +577,6 @@ def _extract_players(
     return spieler
 
 
-
 def _extract_last_match_from_schedule(
     soup,
     teamname,
@@ -597,6 +596,7 @@ def _extract_last_match_from_schedule(
         r"spielbericht/(\d+)",
         current_url or ""
     )
+
     current_match_id = (
         current_match.group(1)
         if current_match
@@ -623,6 +623,7 @@ def _extract_last_match_from_schedule(
         r"/startseite/verein/(\d+)",
         team_link
     )
+
     if not id_match:
         return None
 
@@ -632,6 +633,7 @@ def _extract_last_match_from_schedule(
         r"/([^/]+)/startseite/verein/",
         team_link
     )
+
     if not slug_match:
         return None
 
@@ -641,6 +643,7 @@ def _extract_last_match_from_schedule(
         r"saison_id/(\d{4})",
         team_link
     )
+
     saison = (
         season_match.group(1)
         if season_match
@@ -663,6 +666,7 @@ def _extract_last_match_from_schedule(
                     wait_until="domcontentloaded",
                     timeout=30000
                 )
+
                 try:
                     page.wait_for_load_state(
                         "networkidle",
@@ -670,24 +674,33 @@ def _extract_last_match_from_schedule(
                     )
                 except Exception:
                     pass
+
                 schedule_soup = BeautifulSoup(
                     page.content(),
                     "html.parser"
                 )
+
             finally:
                 browser.close()
+
     except Exception:
         return None
 
     kandidaten = []
 
     for row in schedule_soup.select("tr"):
-        row_text = row.get_text(" ", strip=True)
+
+        row_text = row.get_text(
+            " ",
+            strip=True
+        )
+
         if not row_text:
             continue
 
         # Aktuelles Spiel niemals als "letztes Spiel" verwenden.
         if current_match_id:
+
             row_ids = re.findall(
                 r"spielbericht/(\d+)",
                 " ".join(
@@ -695,6 +708,7 @@ def _extract_last_match_from_schedule(
                     for a in row.select("a[href]")
                 )
             )
+
             if current_match_id in row_ids:
                 continue
 
@@ -702,10 +716,12 @@ def _extract_last_match_from_schedule(
             r"(\d{2}\.\d{2}\.\d{2,4})",
             row_text
         )
+
         if not date_match:
             continue
 
         date_text = date_match.group(1)
+
         date_format = (
             "%d.%m.%Y"
             if len(date_text.rsplit(".", 1)[1]) == 4
@@ -717,15 +733,23 @@ def _extract_last_match_from_schedule(
                 date_text,
                 date_format
             )
+
         except ValueError:
             continue
 
         # Vereinslinks liefern die beiden Teams zuverlässig.
         team_links = []
+
         for a in row.select("a[href]"):
+
             href = a.get("href", "")
-            text = a.get_text(" ", strip=True)
+            text = a.get_text(
+                " ",
+                strip=True
+            )
+
             if "/startseite/verein/" in href and text:
+
                 if text not in team_links:
                     team_links.append(text)
 
@@ -733,8 +757,13 @@ def _extract_last_match_from_schedule(
             continue
 
         own_index = None
+
         for i, text in enumerate(team_links):
-            if _team_match(teamname, text):
+
+            if _team_match(
+                teamname,
+                text
+            ):
                 own_index = i
                 break
 
@@ -742,8 +771,16 @@ def _extract_last_match_from_schedule(
             continue
 
         opponent = ""
+
         for i, text in enumerate(team_links):
-            if i != own_index and not _team_match(teamname, text):
+
+            if (
+                i != own_index
+                and not _team_match(
+                    teamname,
+                    text
+                )
+            ):
                 opponent = text
                 break
 
@@ -754,15 +791,24 @@ def _extract_last_match_from_schedule(
         # Uhrzeiten wie 16:30 werden nicht als Resultat verwendet.
 
         score_text = ""
+        score_a = None
+        score_b = None
 
-        for cell in row.select("td"):
+        cells = row.select("td")
 
-            if not cell.select_one('a[href*="/spielbericht/"]'):
+        for cell in cells:
+
+            if not cell.select_one(
+                'a[href*="/spielbericht/"]'
+            ):
                 continue
 
             matches = re.findall(
                 r"(?<!\d)(\d{1,2})\s*:\s*(\d{1,2})(?!\d)",
-                cell.get_text(" ", strip=True)
+                cell.get_text(
+                    " ",
+                    strip=True
+                )
             )
 
             for a, b in matches:
@@ -776,7 +822,10 @@ def _extract_last_match_from_schedule(
 
                 # Plausibler Fussball-Spielstand
                 if a <= 20 and b <= 20:
+
                     score_text = f"{a}:{b}"
+                    score_a = a
+                    score_b = b
 
             if score_text:
                 break
@@ -786,9 +835,16 @@ def _extract_last_match_from_schedule(
 
         # Ort-Spalte: H = eigenes Team zuhause, A = auswärts.
         ha = None
+
         for cell in cells:
-            cell_text = cell.get_text(" ", strip=True)
+
+            cell_text = cell.get_text(
+                " ",
+                strip=True
+            )
+
             if cell_text in ("H", "A"):
+
                 ha = cell_text
                 break
 
@@ -796,25 +852,38 @@ def _extract_last_match_from_schedule(
             continue
 
         if ha == "H":
-            eigenes = f"{a}:{b}"
-            eigene_tore, fremde_tore = a, b
+
+            eigenes = f"{score_a}:{score_b}"
+            eigene_tore, fremde_tore = (
+                score_a,
+                score_b
+            )
+
         else:
-            eigenes = f"{b}:{a}"
-            eigene_tore, fremde_tore = b, a
+
+            eigenes = f"{score_b}:{score_a}"
+            eigene_tore, fremde_tore = (
+                score_b,
+                score_a
+            )
 
         if eigene_tore > fremde_tore:
             ausgang = "Sieg"
+
         elif eigene_tore < fremde_tore:
             ausgang = "Niederlage"
+
         else:
             ausgang = "Unentschieden"
 
-        kandidaten.append({
-            "datum": match_date,
-            "resultat": eigenes,
-            "gegner": opponent,
-            "ausgang": ausgang,
-        })
+        kandidaten.append(
+            {
+                "datum": match_date,
+                "resultat": eigenes,
+                "gegner": opponent,
+                "ausgang": ausgang,
+            }
+        )
 
     if not kandidaten:
         return None
@@ -825,6 +894,7 @@ def _extract_last_match_from_schedule(
     )
 
     return kandidaten[0]
+
 
 def lade_transfermarkt(
     url,
@@ -865,10 +935,12 @@ def lade_transfermarkt(
                 pass
 
             try:
+
                 page.wait_for_selector(
                     "div.formation-player-container",
                     timeout=8000
                 )
+
             except Exception:
                 pass
 
@@ -879,7 +951,9 @@ def lade_transfermarkt(
             browser.close()
 
     if not html:
+
         if navigation_error is not None:
+
             raise ValueError(
                 "Transfermarkt-Seite konnte nicht geladen werden: "
                 f"{navigation_error}"
@@ -1001,6 +1075,7 @@ def lade_transfermarkt(
     )
 
     if letztes_spiel:
+
         eigenes_resultat = letztes_spiel["resultat"]
         gegner = letztes_spiel["gegner"]
         ausgang = letztes_spiel["ausgang"]
