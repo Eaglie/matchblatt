@@ -1072,9 +1072,9 @@ def _tm_make_coordinates(players, formation, is_home):
                 return 10
             if any(x in p for x in ("right winger", "right wing", "right midfield", "right midfielder", "right-sided", "rechter flügel", "rechtes mittelfeld")):
                 return 40
-            if any(x in p for x in ("defensive midfield", "defensive midfielder", "central defensive", "defensives mittelfeld")):
-                return 20
             if any(x in p for x in ("central midfield", "central midfielder", "centre midfield", "centre midfielder", "center midfield", "center midfielder", "zentrales mittelfeld")):
+                return 20
+            if any(x in p for x in ("defensive midfield", "defensive midfielder", "central defensive", "defensives mittelfeld")):
                 return 30
             if any(x in p for x in ("attacking midfield", "attacking midfielder", "offensive midfield", "offensives mittelfeld")):
                 return 30
@@ -1135,6 +1135,48 @@ def _tm_make_coordinates(players, formation, is_home):
 
     return result
 
+
+def _tm_api_last_match(player_id, current_id, team_id):
+    """Liest das letzte bereits gespielte Match aus der direkten JSON-API."""
+    if not player_id:
+        return None
+
+    data, _ = _tm_api_get(f"/player/{player_id}/performance-game")
+    if not isinstance(data, dict):
+        return None
+
+    performance = data.get("performance")
+    if not isinstance(performance, list):
+        return None
+
+    matches = sorted(
+        [m for m in performance if isinstance(m, dict)],
+        key=lambda m: ((m.get("gameInformation") or {}).get("date") or {}).get("dateTimeUTC") or "",
+        reverse=True,
+    )
+
+    for match in matches:
+        info = match.get("gameInformation") or {}
+        game_id = str(info.get("gameId", ""))
+        if game_id == str(current_id):
+            continue
+        teams = match.get("clubsInformation") or {}
+        club = teams.get("club") or {}
+        opponent = teams.get("opponent") or {}
+        club_id = club.get("clubId")
+        if team_id and club_id is not None and str(club_id) != str(team_id):
+            continue
+        club_name = str(club.get("name") or "").strip()
+        opponent_name = str(opponent.get("name") or "").strip()
+        club_goals = club.get("goalsTotal")
+        opponent_goals = opponent.get("goalsTotal")
+        if club_goals is None or opponent_goals is None:
+            continue
+        if not club_name or not opponent_name:
+            return (str(club_id or ""), str(opponent.get("clubId") or ""), int(club_goals), int(opponent_goals))
+        return (club_name, opponent_name, int(club_goals), int(opponent_goals))
+
+    return None
 
 def _lade_transfermarkt_api(url, teamname):
     """Lädt den Spielbericht direkt aus Transfermarkts interner JSON-API."""
