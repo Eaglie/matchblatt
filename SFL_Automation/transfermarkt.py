@@ -1034,128 +1034,15 @@ def _tm_position_sort_key(player, group):
     return 20
 
 
-def _tm_extract_exact_coordinates(players, is_home):
-    """Übernimmt vorhandene Transfermarkt-CSS-Koordinaten 1:1."""
-    result = []
-    for p in players:
-        if not isinstance(p, dict):
-            continue
-        top = p.get("styleTop")
-        left = p.get("styleLeft")
-        if top in (None, "") or left in (None, ""):
-            continue
-        name = _tm_player_value(p, "name", "playerName", "fullName", "shortName")
-        number = _tm_player_value(p, "shirtNumber", "shirt_number", "number", "jerseyNumber")
-        if not name:
-            continue
-        try:
-            x = float(left)
-            y = float(top)
-        except (TypeError, ValueError):
-            continue
-        result.append({
-            "nummer": str(number) if number is not None else "",
-            "name": str(name).strip(),
-            "x": x,
-            "y": y,
-        })
-    return result if len(result) == 11 else []
-
-
-def _tm_ceapi_get_final_formation(club_id, match_id, current_players):
-    """Holt die echte Transfermarkt-Feldposition aus FinalFormation.
-
-    Der CEAPI-Endpunkt liefert styleTop/styleLeft, also genau die Werte,
-    die Transfermarkt für die Aufstellungs-Grafik verwendet. Wir akzeptieren
-    die Antwort ausschließlich dann, wenn matchReport.id dem angeforderten
-    Spiel entspricht. Dadurch wird niemals versehentlich die Aufstellung des
-    letzten anderen Spiels verwendet.
-    """
-    if club_id in (None, "") or not match_id:
-        return None
-
-    hosts = (
-        "https://www.transfermarkt.com.tr",
-        "https://www.transfermarkt.de",
-        "https://www.transfermarkt.co.uk",
-        "https://www.transfermarkt.com",
-    )
-
-    body = None
-    for host in hosts:
-        try:
-            response = requests.get(
-                f"{host}/ceapi/FinalFormation/ClubId/{club_id}",
-                timeout=15,
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Accept": "application/json, text/plain, */*",
-                    "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
-                },
-            )
-            if response.status_code != 200:
-                continue
-            body = response.json()
-            if isinstance(body, dict):
-                break
-        except (requests.RequestException, ValueError):
-            continue
-
-    if not isinstance(body, dict):
-        return None
-
-    # Manche CEAPI-Proxyvarianten wickeln die Nutzdaten in data ein.
-    data = body.get("data") if isinstance(body.get("data"), dict) else body
-    report = data.get("matchReport") or {}
-    returned_match_id = str(report.get("id") or "")
-    if returned_match_id != str(match_id):
-        return None
-
-    listing = data.get("list") or {}
-    ce_players = listing.get("players") or []
-    if not isinstance(ce_players, list):
-        return None
-
-    # Primär über Spieler-ID, danach über normalisierten Namen zuordnen.
-    by_id = {}
-    by_name = {}
-    for cp in ce_players:
-        if not isinstance(cp, dict):
-            continue
-        cid = cp.get("id")
-        if cid is not None:
-            by_id[str(cid)] = cp
-        cname = _normalize_team(str(cp.get("name") or ""))
-        if cname:
-            by_name[cname] = cp
-
-    exact = []
-    for p in current_players:
-        pid = p.get("id") if isinstance(p, dict) else None
-        cp = by_id.get(str(pid)) if pid is not None else None
-        if cp is None:
-            pname = _tm_player_value(p, "name", "playerName", "fullName", "shortName")
-            cp = by_name.get(_normalize_team(str(pname or "")))
-        if cp is None:
-            return None
-
-        merged = dict(p)
-        merged["name"] = cp.get("name") or _tm_player_value(p, "name", "playerName", "fullName", "shortName")
-        merged["shirtNumber"] = cp.get("number") or _tm_player_value(p, "shirtNumber", "shirt_number", "number", "jerseyNumber")
-        merged["styleTop"] = cp.get("styleTop")
-        merged["styleLeft"] = cp.get("styleLeft")
-        exact.append(merged)
-
-    coords = _tm_extract_exact_coordinates(exact, True)
-    return coords if len(coords) == 11 else None
-
-
 def _tm_make_coordinates(players, formation, is_home):
-    """Nur als Fallback für API-Antworten ohne styleTop/styleLeft.
+    """Ordnet die Startelf anhand von Formation UND tatsächlichen Positionen an.
 
-    Die eigentliche Darstellung verwendet _tm_ceapi_get_final_formation().
-    Diese Funktion bleibt nur erhalten, damit ein fehlendes CEAPI nicht die
-    komplette Matchblatt-Erstellung zerstört.
+    Die Transfermarkt-API liefert die Spieler nicht zuverlässig in der
+    visuellen Reihenfolge. Deshalb wird niemals mehr davon ausgegangen, dass
+    Spieler 1 automatisch der Torhüter und die folgenden Spieler automatisch
+    Verteidiger/Mittelfeld/Stürmer sind. Zuerst werden die Spieler nach ihrer
+    Positionsangabe gruppiert, danach werden die Formationsreihen gefüllt und
+    innerhalb der Reihe links -> rechts sortiert.
     """
     nums = [int(x) for x in re.findall(r"\d+", formation or "")]
     if len(nums) != 3 or sum(nums) != 10:
@@ -1165,15 +1052,134 @@ def _tm_make_coordinates(players, formation, is_home):
     if len(lineup) != 11:
         return []
 
-    row_counts = [1, nums[0], nums[1], nums[2]]
-    row_names = ["goalkeeper", "defender", "midfielder", "striker"]
-    rows = []
-    cursor = 0
-    for count, row_name in zip(row_counts, row_names):
-        row = lineup[cursor:cursor + count]
-        cursor += count
-        rows.append(row)
+    def group(player):
+        return _tm_position_group(player)
 
+    def score(player, row):
+        p = _tm_position_text(player).lower()
+
+        if row == "defender":
+            if any(x in p for x in (
+                "left-back", "left back", "leftback",
+                "left full-back", "linker außenverteidiger",
+                "linksverteidiger", "linker verteidiger"
+            )):
+                return 10
+            if any(x in p for x in (
+                "right-back", "right back", "rightback",
+                "right full-back", "rechter außenverteidiger",
+                "rechtsverteidiger", "rechter verteidiger"
+            )):
+                return 40
+            return 25
+
+        if row == "midfielder":
+            if any(x in p for x in (
+                "left winger", "left wing", "left midfield",
+                "left midfielder", "left-sided", "linker flügel",
+                "linkes mittelfeld"
+            )):
+                return 10
+            if any(x in p for x in (
+                "right winger", "right wing", "right midfield",
+                "right midfielder", "right-sided", "rechter flügel",
+                "rechtes mittelfeld"
+            )):
+                return 40
+            if any(x in p for x in (
+                "defensive midfield", "defensive midfielder",
+                "central defensive", "defensives mittelfeld"
+            )):
+                return 20
+            if any(x in p for x in (
+                "central midfield", "central midfielder",
+                "centre midfield", "centre midfielder",
+                "center midfield", "center midfielder",
+                "zentrales mittelfeld"
+            )):
+                return 25
+            if any(x in p for x in (
+                "attacking midfield", "attacking midfielder",
+                "offensive midfield", "offensives mittelfeld"
+            )):
+                return 30
+            return 25
+
+        if row == "striker":
+            if any(x in p for x in (
+                "left winger", "left wing", "left forward",
+                "left-sided", "linker flügel"
+            )):
+                return 10
+            if any(x in p for x in (
+                "right winger", "right wing", "right forward",
+                "right-sided", "rechter flügel"
+            )):
+                return 30
+            return 20
+
+        return 20
+
+    # 1. Torhüter niemals anhand der API-Reihenfolge bestimmen.
+    goalkeepers = [p for p in lineup if group(p) == "goalkeeper"]
+    others = [p for p in lineup if p not in goalkeepers]
+
+    # Falls Transfermarkt eine Position nicht sauber liefert, bleibt die
+    # ursprüngliche Reihenfolge als letzte Reserve erhalten.
+    if len(goalkeepers) > 1:
+        goalkeepers = goalkeepers[:1]
+        others = [p for p in lineup if p not in goalkeepers]
+    if not goalkeepers:
+        # Nur als Fallback: einen Spieler mit expliziter Torwartbezeichnung
+        # suchen. Normalerweise greift die Position-Gruppe bereits oben.
+        for p in list(others):
+            if any(x in _tm_position_text(p).lower() for x in ("goalkeeper", "goalie", "keeper", "torwart")):
+                goalkeepers = [p]
+                others.remove(p)
+                break
+
+    # 2. Natürliche Positionsgruppen bilden. Winger sind flexibel und werden
+    # je nach Formation für Mittelfeld oder Angriff verwendet.
+    defenders = [p for p in others if group(p) == "defender"]
+    midfielders = [p for p in others if group(p) == "midfielder"]
+    wings = [p for p in others if group(p) == "wing"]
+    strikers = [p for p in others if group(p) == "striker"]
+    unknown = [p for p in others if group(p) not in {"defender", "midfielder", "wing", "striker"}]
+
+    def take_many(sources, count):
+        """Nimmt Spieler aus mehreren Prioritätsgruppen, ohne Duplikate."""
+        taken = []
+        for source in sources:
+            while source and len(taken) < count:
+                taken.append(source.pop(0))
+            if len(taken) >= count:
+                break
+        return taken
+
+    # 3. Reihen nach der Formation füllen. Dabei werden Spieler niemals
+    # doppelt verwendet. Winger sind flexibel und werden dort eingesetzt, wo
+    # die Formation sie benötigt.
+    defender_row = take_many([defenders, unknown], nums[0])
+    midfielder_row = take_many([midfielders, wings, unknown], nums[1])
+    striker_row = take_many([strikers, wings, unknown], nums[2])
+
+    # Falls die API ungewöhnliche Positionsbezeichnungen liefert und danach
+    # noch Spieler übrig sind, werden fehlende Plätze mit den noch freien
+    # Spielern aufgefüllt.
+    used = set(id(p) for p in goalkeepers + defender_row + midfielder_row + striker_row)
+    remaining = [p for p in lineup if id(p) not in used]
+    rows = [goalkeepers[:1], defender_row, midfielder_row, striker_row]
+    for row_index in range(1, 4):
+        while len(rows[row_index]) < [nums[0], nums[1], nums[2]][row_index - 1] and remaining:
+            rows[row_index].append(remaining.pop(0))
+
+    # Links -> rechts sortieren; bei gleicher Rolle bleibt die API-Reihenfolge
+    # erhalten (stable sort).
+    for row_index, row_name in enumerate(("goalkeeper", "defender", "midfielder", "striker")):
+        if row_name != "goalkeeper":
+            rows[row_index] = sorted(row, key=lambda p: score(p, row_name))
+
+    # Angriff oben, Tor unten. Für Gastteams wird das Spielfeld gespiegelt.
     y_values = [88.0, 70.0, 50.0, 31.0]
     result = []
     for row_index, row in enumerate(rows):
@@ -1191,6 +1197,7 @@ def _tm_make_coordinates(players, formation, is_home):
                 "x": x,
                 "y": y if is_home else 100.0 - y,
             })
+
     return result
 
 def _tm_api_last_match(player_id, current_id, team_id):
@@ -1324,22 +1331,9 @@ def _lade_transfermarkt_api(url, teamname):
         raise ValueError(f"Transfermarkt-JSON-API: {missing} Spieler der Startelf konnten nicht aufgelöst werden.")
 
     formation = own_side.get("tactic", {}).get("tactic") if isinstance(own_side.get("tactic"), dict) else ""
-
-    # ZUERST die echten Transfermarkt-Koordinaten holen.
-    # styleTop/styleLeft sind die Werte der originalen Transfermarkt-
-    # Aufstellungsgrafik und dürfen nicht aus Formation/Position berechnet werden.
-    spieler = _tm_extract_exact_coordinates(normalized_players, is_home)
+    spieler = _tm_make_coordinates(normalized_players, str(formation or ""), is_home)
     if len(spieler) != 11:
-        spieler = _tm_ceapi_get_final_formation(own_id, match_id, normalized_players) or []
-
-    if len(spieler) != 11:
-        # Letzter technischer Fallback, falls Transfermarkt die Koordinaten-
-        # Schnittstelle nicht erreichbar macht. Dieser Pfad ist bewusst nur
-        # ein Fallback und nicht die normale Positionslogik.
-        spieler = _tm_make_coordinates(normalized_players, str(formation or ""), is_home)
-
-    if len(spieler) != 11:
-        raise ValueError(f"Transfermarkt-JSON-API: Es konnten keine 11 gültigen Startspieler verarbeitet werden.")
+        raise ValueError(f"Transfermarkt-JSON-API: Es konnten nur {len(spieler)} Spieler der Startelf verarbeitet werden.")
 
     result = {
         "logo": "",
