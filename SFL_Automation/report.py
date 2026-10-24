@@ -74,17 +74,11 @@ def parse_val(val):
 
 
 def adjust_left(val):
-    n = parse_val(val)
-    if n is None:
-        return val
-    return 50 + (n - 50) * 1.2 + 12
+    return val
 
 
 def adjust_top(val):
-    n = parse_val(val)
-    if n is None:
-        return val
-    return 50 + (n - 50) * 0.95 + 8
+    return val
 
 
 def draw_players(spieler):
@@ -153,14 +147,7 @@ def team_block(teamname, daten, absenzen):
     for s in raw_spieler:
         if not isinstance(s, dict):
             continue
-        s_copy = s.copy()
-        orig_left = s_copy.get("_orig_left", s_copy.get("left", s_copy.get("x")))
-        orig_top = s_copy.get("_orig_top", s_copy.get("top", s_copy.get("y")))
-        s_copy["_orig_left"] = orig_left
-        s_copy["_orig_top"] = orig_top
-        s_copy["left"] = adjust_left(orig_left)
-        s_copy["top"] = adjust_top(orig_top)
-        spieler.append(s_copy)
+        spieler.append(s.copy())
 
     letzter_gegner = daten.get("letzter_gegner", "")
     resultat = daten.get("resultat", "")
