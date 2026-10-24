@@ -1,6 +1,7 @@
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
+import urllib.parse
 import unicodedata
 from datetime import datetime
 import requests
@@ -839,23 +840,28 @@ def _extract_last_match_from_schedule(
 # TRANSFERMARKT JSON-API
 # ---------------------------------------------------------
 
-_TM_API_BASE = "https://transfermarkt-api.fly.dev"
+_TM_API_BASE = "https://tmapi.transfermarkt.technology"
 _TM_LAST_API_CALL = 0.0
 
 
 def _tm_api_wait():
-    """Respektiert das öffentliche API-Limit von 2 Requests / 3 Sekunden."""
+    """Kleine Pause zwischen direkten Transfermarkt-JSON-Anfragen."""
     global _TM_LAST_API_CALL
     import time
     now = time.monotonic()
-    wait = 1.55 - (now - _TM_LAST_API_CALL)
+    wait = 0.25 - (now - _TM_LAST_API_CALL)
     if wait > 0:
         time.sleep(wait)
     _TM_LAST_API_CALL = time.monotonic()
 
 
-def _tm_api_get(path, timeout=20):
-    """Robuster Zugriff auf die Transfermarkt-API mit Retry bei 429/5xx."""
+def _tm_api_get(path, timeout=25):
+    """Direkter Zugriff auf Transfermarkts interne JSON-API.
+
+    Die offizielle Transfermarkt-Webseite ist auf Render durch Human Verification
+    blockiert. Die aktuelle Community-API v4/v5 nutzt stattdessen genau diese
+    interne JSON-API. Die Antwort hat das Format {success: true, data: ...}.
+    """
     import time
     last_error = None
     for attempt in range(4):
@@ -865,37 +871,38 @@ def _tm_api_get(path, timeout=20):
                 _TM_API_BASE + path,
                 timeout=timeout,
                 headers={
-                    "User-Agent": "Matchblatt/1.0",
+                    "User-Agent": "transfermarkt-api",
                     "Accept": "application/json",
                 },
             )
         except requests.RequestException as exc:
-            last_error = str(exc)
+            last_error = f"Netzwerkfehler: {exc}"
             if attempt < 3:
                 time.sleep(2.0)
                 continue
-            return None, f"Transfermarkt-API nicht erreichbar: {last_error}"
+            return None, last_error
 
         if response.status_code == 200:
             try:
-                return response.json(), None
+                body = response.json()
             except ValueError:
-                return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
+                return None, "Transfermarkt-JSON-API liefert kein gültiges JSON."
+            if isinstance(body, dict) and body.get("success") and "data" in body:
+                return body["data"], None
+            return None, "Transfermarkt-JSON-API liefert eine unerwartete Antwort."
 
         last_error = f"HTTP {response.status_code}"
         if response.status_code in (429, 500, 502, 503, 504) and attempt < 3:
             retry_after = response.headers.get("Retry-After")
             try:
-                delay = max(2.0, float(retry_after)) if retry_after else 3.0
+                delay = max(2.0, float(retry_after)) if retry_after else 4.0
             except (TypeError, ValueError):
-                delay = 3.0
+                delay = 4.0
             time.sleep(delay)
             continue
+        return None, f"Transfermarkt-JSON-API {last_error}."
 
-        return None, f"Transfermarkt-API {last_error}."
-
-    return None, f"Transfermarkt-API {last_error or 'unbekannter Fehler'}."
-
+    return None, f"Transfermarkt-JSON-API {last_error or 'unbekannter Fehler'}."
 
 def _tm_team_from_side(side):
     if not isinstance(side, dict):
@@ -956,51 +963,51 @@ def _tm_make_coordinates(players, formation, is_home):
 
 
 def _tm_api_last_match(player_id, current_id, team_id):
-    """Liest das letzte bereits gespielte Match eines Startspielers."""
+    """Liest das letzte bereits gespielte Match aus der direkten JSON-API."""
     if not player_id:
         return None
 
-    data, _ = _tm_api_get(f"/players/{player_id}/matches?page_number=1")
+    data, _ = _tm_api_get(f"/player/{player_id}/performance-game")
     if not isinstance(data, dict):
         return None
 
-    matches = data.get("matches")
-    if not isinstance(matches, list):
+    performance = data.get("performance")
+    if not isinstance(performance, list):
         return None
 
-    for match in matches:
-        if not isinstance(match, dict):
-            continue
+    matches = sorted(
+        [m for m in performance if isinstance(m, dict)],
+        key=lambda m: ((m.get("gameInformation") or {}).get("date") or {}).get("dateTimeUTC") or "",
+        reverse=True,
+    )
 
-        game_id = str(match.get("gameId", ""))
+    for match in matches:
+        info = match.get("gameInformation") or {}
+        game_id = str(info.get("gameId", ""))
         if game_id == str(current_id):
             continue
-
-        club = match.get("club") or {}
-        opponent = match.get("opponent") or {}
-        club_id = club.get("id") if isinstance(club, dict) else None
+        teams = match.get("clubsInformation") or {}
+        club = teams.get("club") or {}
+        opponent = teams.get("opponent") or {}
+        club_id = club.get("clubId")
         if team_id and club_id is not None and str(club_id) != str(team_id):
             continue
-
-        club_name = club.get("name", "") if isinstance(club, dict) else ""
-        opponent_name = opponent.get("name", "") if isinstance(opponent, dict) else ""
-        club_goals = match.get("clubGoals")
-        opponent_goals = match.get("opponentGoals")
-        if not club_name or not opponent_name or club_goals is None or opponent_goals is None:
+        club_name = str(club.get("name") or "").strip()
+        opponent_name = str(opponent.get("name") or "").strip()
+        club_goals = club.get("goalsTotal")
+        opponent_goals = opponent.get("goalsTotal")
+        if club_goals is None or opponent_goals is None:
             continue
-
-        return (
-            str(club_name),
-            str(opponent_name),
-            int(club_goals),
-            int(opponent_goals),
-        )
+        # Namen werden später über die Club-ID aufgelöst, falls performance-game
+        # sie nicht mitsendet. Für das Matchblatt reicht die Club-ID-Prüfung.
+        if not club_name or not opponent_name:
+            return (str(club_id or ""), str(opponent.get("clubId") or ""), int(club_goals), int(opponent_goals))
+        return (club_name, opponent_name, int(club_goals), int(opponent_goals))
 
     return None
 
-
 def _lade_transfermarkt_api(url, teamname):
-    """Lädt einen Spielbericht über die aktuelle Transfermarkt-JSON-API."""
+    """Lädt den Spielbericht direkt aus Transfermarkts interner JSON-API."""
     match = re.search(r"spielbericht/(?:index/)?spielbericht/(\d+)", url or "")
     if not match:
         match = re.search(r"spielbericht/(\d+)", url or "")
@@ -1008,52 +1015,45 @@ def _lade_transfermarkt_api(url, teamname):
         return None
 
     match_id = match.group(1)
-    root, error = _tm_api_get(f"/games/{match_id}")
-    if not isinstance(root, dict):
-        # Auf Render bringt ein HTML-Fallback nichts: Transfermarkt blockiert
-        # dort die normale Webseite. Der konkrete API-Fehler wird ausgegeben.
-        raise ValueError(error or "Transfermarkt-API liefert keine Spieldaten.")
+    game, error = _tm_api_get(f"/game/{match_id}")
+    if not isinstance(game, dict):
+        raise ValueError(error or "Transfermarkt-JSON-API liefert keine Spieldaten.")
 
-    # Aktuelles API-5.0-Schema: home/away sind direkt auf oberster Ebene.
-    home_side = root.get("home")
-    away_side = root.get("away")
+    base = game.get("baseDetails") or {}
+    score = game.get("score") or {}
+    home_side = game.get("homeClub") or {}
+    away_side = game.get("awayClub") or {}
     if not isinstance(home_side, dict) or not isinstance(away_side, dict):
-        raise ValueError("Transfermarkt-API: home/away-Aufstellung fehlt.")
+        raise ValueError("Transfermarkt-JSON-API: Heim-/Gastteam fehlt.")
 
-    home_team, home_id = _tm_team_from_side(home_side)
-    away_team, away_id = _tm_team_from_side(away_side)
-    if not home_team or not away_team:
-        raise ValueError("Transfermarkt-API: Heim- oder Gastteam fehlt.")
+    home_id = home_side.get("clubId")
+    away_id = away_side.get("clubId")
+    home_name = str(home_side.get("name") or "").strip()
+    away_name = str(away_side.get("name") or "").strip()
 
-    if _team_match(teamname, home_team):
-        is_home = True
-        own_side = home_side
-        own_team = home_team
-        own_id = home_id
-        opponent = away_team
-    elif _team_match(teamname, away_team):
-        is_home = False
-        own_side = away_side
-        own_team = away_team
-        own_id = away_id
-        opponent = home_team
+    # Falls der Name nicht im Spielobjekt steht, Clubs separat auflösen.
+    if not home_name and home_id:
+        club, _ = _tm_api_get(f"/club/{home_id}")
+        home_name = str((club or {}).get("name") or "").strip() if isinstance(club, dict) else ""
+    if not away_name and away_id:
+        club, _ = _tm_api_get(f"/club/{away_id}")
+        away_name = str((club or {}).get("name") or "").strip() if isinstance(club, dict) else ""
+
+    if not home_name or not away_name:
+        raise ValueError("Transfermarkt-JSON-API: Heim- oder Gastteam fehlt.")
+
+    if _team_match(teamname, home_name):
+        is_home, own_side, own_team, own_id, opponent = True, home_side, home_name, home_id, away_name
+    elif _team_match(teamname, away_name):
+        is_home, own_side, own_team, own_id, opponent = False, away_side, away_name, away_id, home_name
     else:
-        raise ValueError(
-            f"Transfermarkt-API: Team '{teamname}' passt nicht zu '{home_team}' oder '{away_team}'."
-        )
+        raise ValueError(f"Transfermarkt-JSON-API: Team '{teamname}' passt nicht zu '{home_name}' oder '{away_name}'.")
 
-    score = root.get("score")
-    if not isinstance(score, dict):
-        raise ValueError("Transfermarkt-API: Resultat fehlt.")
     home_goals = score.get("home")
     away_goals = score.get("away")
     if home_goals is None or away_goals is None:
-        raise ValueError("Transfermarkt-API: Heim-/Gasttore fehlen.")
-
-    own_goals, opp_goals = (
-        (int(home_goals), int(away_goals)) if is_home
-        else (int(away_goals), int(home_goals))
-    )
+        raise ValueError("Transfermarkt-JSON-API: Resultat fehlt.")
+    own_goals, opp_goals = ((int(home_goals), int(away_goals)) if is_home else (int(away_goals), int(home_goals)))
 
     if own_goals > opp_goals:
         ausgang = "Sieg"
@@ -1062,22 +1062,47 @@ def _lade_transfermarkt_api(url, teamname):
     else:
         ausgang = "Unentschieden"
 
-    formation = own_side.get("formation") or ""
-    players = own_side.get("startingLineup")
+    lineup = own_side.get("lineup") or {}
+    players = lineup.get("players") or []
     if not isinstance(players, list) or len(players) < 11:
-        raise ValueError(
-            f"Transfermarkt-API: Aufstellung für {own_team} fehlt oder enthält weniger als 11 Spieler."
-        )
+        raise ValueError(f"Transfermarkt-JSON-API: Aufstellung für {own_team} enthält keine 11 Spieler.")
     players = [p for p in players if isinstance(p, dict)][:11]
 
-    spieler = _tm_make_coordinates(players, str(formation), is_home)
+    # Spielernamen aus der Batch-Route holen. Das ist genau die Auflösung, die
+    # auch die aktuelle transfermarkt-api v5 intern verwendet.
+    player_ids = [str(p.get("id")) for p in players if p.get("id") is not None]
+    player_map = {}
+    if player_ids:
+        params = [("ids[]", pid) for pid in player_ids]
+        pdata, perr = _tm_api_get("/players?" + urllib.parse.urlencode(params))
+        if isinstance(pdata, list):
+            player_map = {str(p.get("id")): p for p in pdata if isinstance(p, dict)}
+        elif perr:
+            raise ValueError(perr)
+
+    normalized_players = []
+    for p in players:
+        pid = str(p.get("id")) if p.get("id") is not None else ""
+        ref = player_map.get(pid) or {}
+        q = dict(p)
+        q["name"] = ref.get("name") or p.get("name") or ""
+        q["shirtNumber"] = p.get("shirtNumber")
+        q["position"] = p.get("position") or {}
+        normalized_players.append(q)
+
+    if any(not p.get("name") for p in normalized_players):
+        missing = sum(1 for p in normalized_players if not p.get("name"))
+        raise ValueError(f"Transfermarkt-JSON-API: {missing} Spieler der Startelf konnten nicht aufgelöst werden.")
+
+    formation = own_side.get("tactic", {}).get("tactic") if isinstance(own_side.get("tactic"), dict) else ""
+    spieler = _tm_make_coordinates(normalized_players, str(formation or ""), is_home)
     if len(spieler) != 11:
-        raise ValueError(f"Transfermarkt-API: Es konnten nur {len(spieler)} Spieler der Startelf verarbeitet werden.")
+        raise ValueError(f"Transfermarkt-JSON-API: Es konnten nur {len(spieler)} Spieler der Startelf verarbeitet werden.")
 
     result = {
         "logo": "",
         "team": own_team,
-        "formation": str(formation),
+        "formation": str(formation or ""),
         "resultat": f"{own_goals}:{opp_goals}",
         "letzter_gegner": opponent,
         "gegner": opponent,
@@ -1085,27 +1110,18 @@ def _lade_transfermarkt_api(url, teamname):
         "spieler": spieler,
     }
 
-    # Für das Matchblatt wird zusätzlich das letzte Spiel benötigt.
-    # Nur EIN Spieler pro Team wird abgefragt; die API liefert dessen
-    # komplette Match-Historie. So bleiben die Requests überschaubar.
-    first_player_id = _tm_player_value(players[0], "id", "playerId")
+    first_player_id = str(players[0].get("id")) if players[0].get("id") is not None else None
     last = _tm_api_last_match(first_player_id, match_id, own_id)
     if last:
         last_team, last_opponent, last_own, last_opp = last
-        # Die Match-Historie bezieht sich auf den Spieler und damit auf sein Team.
-        if _team_match(last_team, own_team):
+        # Wenn nur IDs zurückkommen, bleibt der bereits bekannte Gegner stehen.
+        if last_team and not str(last_team).isdigit():
             result["resultat"] = f"{last_own}:{last_opp}"
             result["gegner"] = last_opponent
             result["letzter_gegner"] = last_opponent
-            if last_own > last_opp:
-                result["ausgang"] = "Sieg"
-            elif last_own < last_opp:
-                result["ausgang"] = "Niederlage"
-            else:
-                result["ausgang"] = "Unentschieden"
+            result["ausgang"] = "Sieg" if last_own > last_opp else "Niederlage" if last_own < last_opp else "Unentschieden"
 
     return result
-
 
 def lade_transfermarkt(
     url,
