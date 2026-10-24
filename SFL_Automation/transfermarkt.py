@@ -1035,207 +1035,106 @@ def _tm_position_sort_key(player, group):
 
 
 def _tm_make_coordinates(players, formation, is_home):
-    """Erzeugt die Matchblatt-Koordinaten passend zur Formation.
+    """Ordnet die Startelf anhand der Transfermarkt-Formation an.
 
-    Entscheidend: Winger sind keine automatisch falschen Stürmer.
-    In einem 4-4-2 gehören sie ins Mittelfeld, in einem 3-4-3 können
-    sie Teil der Dreierangriffsreihe sein.
+    Wichtig: Die API liefert die Spieler nicht in der visuellen Links-nach-
+    Rechts-Reihenfolge der Aufstellung. Deshalb werden die Spieler zuerst
+    den Formationsreihen zugeordnet und danach innerhalb jeder Reihe anhand
+    ihrer konkreten Positionsangabe links -> rechts sortiert.
+
+    Beispiel Basel 4-4-2:
+        9 Celar       37 Koloto
+        11 Olaigbe  5 Metinho  4 Omeragic  7 Otele
+        29 Cissé    24 Daniliuc 55 Akpe Victory 22 Michelin
+        1 Omlin
     """
     nums = [int(x) for x in re.findall(r"\d+", formation or "")]
-    if sum(nums) != 10:
-        nums = []
+    if len(nums) != 3 or sum(nums) != 10:
+        nums = [4, 3, 3]
 
-    rows = [1] + nums if nums else [1, 4, 3, 3]
-    if sum(rows) != len(players):
-        rows = [1, len(players) - 1]
+    def position_score(player, row):
+        pos = _tm_position_text(player)
+        p = pos.lower()
 
-    # Natürliche Rollen bilden.
-    buckets = {
-        "goalkeeper": [],
-        "defender": [],
-        "midfielder": [],
-        "wing": [],
-        "striker": [],
-        "unknown": [],
-    }
+        # Links -> rechts. Die konkreten Rollen sind wichtiger als die
+        # Reihenfolge, in der die API die Spieler liefert.
+        if row == "defender":
+            if any(x in p for x in ("left-back", "left back", "leftback", "linker außenverteidiger", "linksverteidiger")):
+                return 10
+            if any(x in p for x in ("right-back", "right back", "rightback", "rechter außenverteidiger", "rechtsverteidiger")):
+                return 40
+            # Innenverteidiger bleiben in der Mitte; bei mehreren wird die
+            # API-Reihenfolge als Tie-Breaker verwendet.
+            return 25
 
-    for player in players:
-        group = _tm_position_group(player)
-        buckets[group if group in buckets else "unknown"].append(player)
+        if row == "midfielder":
+            if any(x in p for x in ("left winger", "left wing", "left midfield", "left midfielder", "left-sided", "linker flügel", "linkes mittelfeld")):
+                return 10
+            if any(x in p for x in ("right winger", "right wing", "right midfield", "right midfielder", "right-sided", "rechter flügel", "rechtes mittelfeld")):
+                return 40
+            if any(x in p for x in ("defensive midfield", "defensive midfielder", "central defensive", "defensives mittelfeld")):
+                return 20
+            if any(x in p for x in ("central midfield", "central midfielder", "centre midfield", "centre midfielder", "center midfield", "center midfielder", "zentrales mittelfeld")):
+                return 30
+            if any(x in p for x in ("attacking midfield", "attacking midfielder", "offensive midfield", "offensives mittelfeld")):
+                return 30
+            return 25
 
-    goalkeeper = buckets["goalkeeper"][:1]
+        if row == "striker":
+            if any(x in p for x in ("left winger", "left wing", "left forward", "left-sided", "linker flügel")):
+                return 10
+            if any(x in p for x in ("right winger", "right wing", "right forward", "right-sided", "rechter flügel")):
+                return 30
+            if any(x in p for x in ("second striker", "centre-forward", "center-forward", "striker", "forward", "stürmer")):
+                return 20
+            return 20
 
-    defender_count = rows[1] if len(rows) > 1 else 0
-    midfield_count = rows[2] if len(rows) > 2 else 0
-    striker_count = rows[3] if len(rows) > 3 else 0
+        return 20
 
-    # Verteidiger möglichst exakt besetzen.
-    defenders = sorted(
-        buckets["defender"],
-        key=lambda p: _tm_position_sort_key(p, "defender")
-    )
+    lineup = [p for p in players if isinstance(p, dict)][:11]
+    if len(lineup) != 11:
+        return []
 
-    # Winger sind flexibel. Zuerst echte Mittelfeldspieler, danach Winger.
-    midfielders = list(buckets["midfielder"])
-    wings = list(buckets["wing"])
-    midfielders = sorted(
-        midfielders,
-        key=lambda p: _tm_position_sort_key(p, "midfielder")
-    )
-    wings = sorted(
-        wings,
-        key=lambda p: _tm_position_sort_key(p, "midfielder")
-    )
+    # Die API gruppiert die Startelf bereits nach taktischen Reihen, aber
+    # nicht immer in visueller Links-nach-Rechts-Reihenfolge. Die Counts der
+    # Formation bestimmen deshalb die Reihen eindeutig.
+    row_counts = [1, nums[0], nums[1], nums[2]]
+    row_names = ["goalkeeper", "defender", "midfielder", "striker"]
 
-    # Echte Stürmer zuerst in die Angriffsreihe.
-    strikers = sorted(
-        buckets["striker"],
-        key=lambda p: _tm_position_sort_key(p, "striker")
-    )
+    rows = []
+    cursor = 0
+    for count, row_name in zip(row_counts, row_names):
+        row = lineup[cursor:cursor + count]
+        cursor += count
+        # Nur innerhalb der jeweiligen Reihe sortieren. Bei gleicher Rolle
+        # bleibt die ursprüngliche API-Reihenfolge erhalten (stable sort).
+        if row_name != "goalkeeper":
+            row = sorted(row, key=lambda p: position_score(p, row_name))
+        rows.append(row)
 
-    # 1) Verteidiger-Reihe
-    row_def = defenders[:defender_count]
-    remaining_def = defenders[defender_count:]
-
-    # Falls Transfermarkt eine Position nicht sauber liefert, aus unbekannt
-    # auffüllen.
-    unknown = list(buckets["unknown"]) + remaining_def
-
-    # 2) Angriffsreihe:
-    # echte Stürmer zuerst; fehlende Plätze mit Winger auffüllen.
-    row_str = strikers[:striker_count]
-    remaining_str = strikers[striker_count:]
-
-    if len(row_str) < striker_count:
-        need = striker_count - len(row_str)
-        row_str.extend(wings[:need])
-        wings = wings[need:]
-
-    # 3) Mittelfeld:
-    # echte Mittelfeldspieler + die übrigen Winger.
-    row_mid = midfielders[:midfield_count]
-    midfielders_left = midfielders[midfield_count:]
-
-    if len(row_mid) < midfield_count:
-        need = midfield_count - len(row_mid)
-        row_mid.extend(wings[:need])
-        wings = wings[need:]
-
-    # Rest als Fallback verwenden.
-    used = {id(p) for p in goalkeeper + row_def + row_mid + row_str}
-    leftovers = [
-        p for p in players
-        if id(p) not in used
-    ]
-
-    def take_from_leftovers(row, count):
-        if len(row) >= count:
-            return row
-        need = count - len(row)
-        row.extend(leftovers[:need])
-        del leftovers[:need]
-        return row
-
-    row_def = take_from_leftovers(row_def, defender_count)
-    row_mid = take_from_leftovers(row_mid, midfield_count)
-    row_str = take_from_leftovers(row_str, striker_count)
-
-    ordered_rows = [goalkeeper, row_def, row_mid, row_str]
-
-    # Falls die Formation keine vier Reihen hat, verbleibende Spieler nicht
-    # verlieren.
-    used = {id(p) for row in ordered_rows for p in row}
-    leftovers = [p for p in players if id(p) not in used]
-    for p in leftovers:
-        for row in ordered_rows:
-            if len(row) < (rows[ordered_rows.index(row)] if ordered_rows.index(row) < len(rows) else 0):
-                row.append(p)
-                break
-
-    y_values = [88.0, 70.0, 50.0, 31.0, 16.0]
-    if len(rows) > len(y_values):
-        y_values = [
-            88.0 - i * (72.0 / max(1, len(rows) - 1))
-            for i in range(len(rows))
-        ]
-
+    # In der Matchblatt-Grafik ist der Angriff oben und das Tor unten.
+    # Für Heim/Gast wird nur die Spielfeldrichtung gespiegelt.
+    y_values = [88.0, 70.0, 50.0, 31.0]
     result = []
-    for row_index, count in enumerate(rows):
-        row = ordered_rows[row_index] if row_index < len(ordered_rows) else []
-        # Innerhalb der tatsächlichen Reihe links -> rechts sortieren.
-        group_name = (
-            "defender" if row_index == 1
-            else "midfielder" if row_index == 2
-            else "striker" if row_index == 3
-            else "goalkeeper"
-        )
-        if row_index > 0:
-            row = sorted(
-                row[:count],
-                key=lambda p: _tm_position_sort_key(p, group_name)
-            )
 
-        y = y_values[min(row_index, len(y_values) - 1)]
-        for j, player in enumerate(row[:count]):
+    for row_index, row in enumerate(rows):
+        count = len(row)
+        y = y_values[row_index]
+        for j, player in enumerate(row):
             x = 50.0 if count == 1 else 12.0 + (76.0 * j / (count - 1))
             name = _tm_player_value(player, "name", "playerName", "fullName")
-            number = _tm_player_value(
-                player, "shirtNumber", "shirt_number",
-                "number", "jerseyNumber"
-            )
-            if name:
-                result.append({
-                    "nummer": str(number) if number is not None else "",
-                    "name": str(name).strip(),
-                    "x": x,
-                    "y": y if is_home else 100.0 - y,
-                })
+            number = _tm_player_value(player, "shirtNumber", "shirt_number", "number", "jerseyNumber")
+            if not name:
+                continue
+            result.append({
+                "nummer": str(number) if number is not None else "",
+                "name": str(name).strip(),
+                "x": x,
+                "y": y if is_home else 100.0 - y,
+            })
 
     return result
 
-def _tm_api_last_match(player_id, current_id, team_id):
-    """Liest das letzte bereits gespielte Match aus der direkten JSON-API."""
-    if not player_id:
-        return None
-
-    data, _ = _tm_api_get(f"/player/{player_id}/performance-game")
-    if not isinstance(data, dict):
-        return None
-
-    performance = data.get("performance")
-    if not isinstance(performance, list):
-        return None
-
-    matches = sorted(
-        [m for m in performance if isinstance(m, dict)],
-        key=lambda m: ((m.get("gameInformation") or {}).get("date") or {}).get("dateTimeUTC") or "",
-        reverse=True,
-    )
-
-    for match in matches:
-        info = match.get("gameInformation") or {}
-        game_id = str(info.get("gameId", ""))
-        if game_id == str(current_id):
-            continue
-        teams = match.get("clubsInformation") or {}
-        club = teams.get("club") or {}
-        opponent = teams.get("opponent") or {}
-        club_id = club.get("clubId")
-        if team_id and club_id is not None and str(club_id) != str(team_id):
-            continue
-        club_name = str(club.get("name") or "").strip()
-        opponent_name = str(opponent.get("name") or "").strip()
-        club_goals = club.get("goalsTotal")
-        opponent_goals = opponent.get("goalsTotal")
-        if club_goals is None or opponent_goals is None:
-            continue
-        # Namen werden später über die Club-ID aufgelöst, falls performance-game
-        # sie nicht mitsendet. Für das Matchblatt reicht die Club-ID-Prüfung.
-        if not club_name or not opponent_name:
-            return (str(club_id or ""), str(opponent.get("clubId") or ""), int(club_goals), int(opponent_goals))
-        return (club_name, opponent_name, int(club_goals), int(opponent_goals))
-
-    return None
 
 def _lade_transfermarkt_api(url, teamname):
     """Lädt den Spielbericht direkt aus Transfermarkts interner JSON-API."""
