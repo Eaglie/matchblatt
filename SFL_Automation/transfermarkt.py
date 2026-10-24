@@ -91,12 +91,22 @@ def _extract_team_names(
 ):
     """
     Ermittelt Heim- und Gastteam robust aus einer Transfermarkt-Spielberichtseite.
+
+    Transfermarkt ändert die HTML-Struktur gelegentlich. Deshalb werden mehrere
+    unabhängige Quellen verwendet:
+    1. klassische sb-team-Struktur
+    2. Seitentitel / H1 / og:title
+    3. Vereinslinks der Spielseite
+    4. sichtbare Überschriften als letzter Fallback
     """
 
     heim_team = ""
     gast_team = ""
 
-    # 1. Direkte Transfermarkt-Struktur
+    # ---------------------------------------------------------
+    # 1. Klassische Transfermarkt-Struktur
+    # ---------------------------------------------------------
+
     heim_box = (
         soup.select_one(".sb-team.sb-heim a.sb-club__link")
         or soup.select_one(".sb-team.sb-heim a")
@@ -110,78 +120,48 @@ def _extract_team_names(
     )
 
     if heim_box:
-        heim_team = heim_box.get_text(
-            " ",
-            strip=True
-        )
+        heim_team = heim_box.get_text(" ", strip=True)
 
     if gast_box:
-        gast_team = gast_box.get_text(
-            " ",
-            strip=True
-        )
+        gast_team = gast_box.get_text(" ", strip=True)
 
-    # 2. Hauptüberschrift / Seitentitel
+    # ---------------------------------------------------------
+    # 2. H1 / Seitentitel / og:title
+    # ---------------------------------------------------------
+
     titel_quellen = []
 
     h1 = soup.select_one("h1")
-
     if h1:
-        titel_quellen.append(
-            h1.get_text(
-                " ",
-                strip=True
-            )
-        )
+        titel_quellen.append(h1.get_text(" ", strip=True))
 
     if soup.title:
-        titel_quellen.append(
-            soup.title.get_text(
-                " ",
-                strip=True
-            )
-        )
+        titel_quellen.append(soup.title.get_text(" ", strip=True))
 
-    meta_title = soup.select_one(
-        'meta[property="og:title"]'
-    )
-
-    if (
-        meta_title
-        and meta_title.get("content")
-    ):
-        titel_quellen.append(
-            meta_title["content"].strip()
-        )
+    meta_title = soup.select_one('meta[property="og:title"]')
+    if meta_title and meta_title.get("content"):
+        titel_quellen.append(meta_title["content"].strip())
 
     for titel_text in titel_quellen:
-
         if not titel_text:
             continue
 
-        match_paar = titel_text.split(
-            ",",
-            1
-        )[0].strip()
+        # Transfermarkt verwendet normalerweise:
+        # "Heimteam - Gastteam, Datum"
+        match_paar = titel_text.split(",", 1)[0].strip()
 
         if " - " not in match_paar:
             continue
 
         t1, t2 = [
             x.strip()
-            for x in match_paar.split(
-                " - ",
-                1
-            )
+            for x in match_paar.split(" - ", 1)
         ]
 
         if (
             t1
             and t2
-            and _team_match(
-                teamname,
-                t1
-            )
+            and _team_match(teamname, t1)
         ):
             heim_team = t1
             gast_team = t2
@@ -190,31 +170,80 @@ def _extract_team_names(
         if (
             t1
             and t2
-            and _team_match(
-                teamname,
-                t2
-            )
+            and _team_match(teamname, t2)
         ):
             heim_team = t1
             gast_team = t2
             break
 
-    # 3. Breiter Fallback über sichtbare Überschriften
+    # ---------------------------------------------------------
+    # 3. NEU: Vereinslinks der eigentlichen Spielseite
+    #
+    # Das ist der wichtige zusätzliche Fallback. Die bisherige
+    # Version war hier auf .sb-team / .sb-heim / .sb-gast
+    # angewiesen. Diese Klassen sind auf aktuellen Transfermarkt-
+    # Seiten nicht immer vorhanden.
+    # ---------------------------------------------------------
+
+    if not heim_team or not gast_team:
+        team_links = []
+
+        for a in soup.select('a[href*="/startseite/verein/"]'):
+            text = a.get_text(" ", strip=True)
+
+            if not text:
+                continue
+
+            # Vereinsnamen können mehrfach auf der Seite vorkommen.
+            if text not in team_links:
+                team_links.append(text)
+
+        # Zuerst nach einem Paar suchen, bei dem eines der Teams
+        # eindeutig dem eingegebenen Team entspricht.
+        if team_links:
+            own_index = None
+
+            for i, text in enumerate(team_links):
+                if _team_match(teamname, text):
+                    own_index = i
+                    break
+
+            if own_index is not None:
+                # Der zweite relevante Vereinslink auf der
+                # Spielseite ist normalerweise der Gegner.
+                for i, text in enumerate(team_links):
+                    if i == own_index:
+                        continue
+
+                    if _team_match(teamname, text):
+                        continue
+
+                    heim_team = (
+                        text
+                        if own_index > i
+                        else team_links[own_index]
+                    )
+                    gast_team = (
+                        team_links[own_index]
+                        if own_index > i
+                        else text
+                    )
+                    break
+
+    # ---------------------------------------------------------
+    # 4. Breiter Fallback über sichtbare Überschriften
+    # ---------------------------------------------------------
+
     kandidaten = []
 
     if not heim_team or not gast_team:
-
         for element in soup.select(
             "h1, h2, h3, h4, "
             ".sb-team, "
             "[class*='team'], "
             "[class*='club']"
         ):
-
-            text = element.get_text(
-                " ",
-                strip=True
-            )
+            text = element.get_text(" ", strip=True)
 
             if not text:
                 continue
@@ -224,29 +253,20 @@ def _extract_team_names(
             if " - " not in text:
                 continue
 
-            paar = text.split(
-                ",",
-                1
-            )[0].strip()
+            paar = text.split(",", 1)[0].strip()
 
             if " - " not in paar:
                 continue
 
             t1, t2 = [
                 x.strip()
-                for x in paar.split(
-                    " - ",
-                    1
-                )
+                for x in paar.split(" - ", 1)
             ]
 
             if (
                 t1
                 and t2
-                and _team_match(
-                    teamname,
-                    t1
-                )
+                and _team_match(teamname, t1)
             ):
                 heim_team = t1
                 gast_team = t2
@@ -255,20 +275,18 @@ def _extract_team_names(
             if (
                 t1
                 and t2
-                and _team_match(
-                    teamname,
-                    t2
-                )
+                and _team_match(teamname, t2)
             ):
                 heim_team = t1
                 gast_team = t2
                 break
 
-    # 4. Letzter Rohtext-Fallback
+    # ---------------------------------------------------------
+    # 5. Letzter Rohtext-Fallback
+    # ---------------------------------------------------------
+
     if not heim_team or not gast_team:
-
         for text in kandidaten:
-
             match = re.search(
                 r"([A-Za-zÀ-ÿ0-9.'’&()\- ]+?)"
                 r"\s+-\s+"
@@ -282,21 +300,19 @@ def _extract_team_names(
             t1 = match.group(1).strip()
             t2 = match.group(2).strip()
 
-            if _team_match(
-                teamname,
-                t1
-            ):
+            if _team_match(teamname, t1):
                 heim_team = t1
                 gast_team = t2
                 break
 
-            if _team_match(
-                teamname,
-                t2
-            ):
+            if _team_match(teamname, t2):
                 heim_team = t1
                 gast_team = t2
                 break
+
+    # ---------------------------------------------------------
+    # Sicherheitsprüfungen
+    # ---------------------------------------------------------
 
     if not heim_team or not gast_team:
         raise ValueError(
@@ -304,24 +320,14 @@ def _extract_team_names(
             "konnten nicht eindeutig gefunden werden."
         )
 
-    if _team_match(
-        heim_team,
-        gast_team
-    ):
+    if _team_match(heim_team, gast_team):
         raise ValueError(
             "Transfermarkt: Heimteam und Gastteam "
             "sind identisch."
         )
 
-    heim_match = _team_match(
-        teamname,
-        heim_team
-    )
-
-    gast_match = _team_match(
-        teamname,
-        gast_team
-    )
+    heim_match = _team_match(teamname, heim_team)
+    gast_match = _team_match(teamname, gast_team)
 
     if heim_match and gast_match:
         raise ValueError(
@@ -785,6 +791,7 @@ def _extract_last_match_from_schedule(
             continue
 
         # Ort-Spalte: H = eigenes Team zuhause, A = auswärts.
+        cells = row.select("td")
         ha = None
         for cell in cells:
             cell_text = cell.get_text(" ", strip=True)
