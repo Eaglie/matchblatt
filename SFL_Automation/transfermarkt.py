@@ -848,33 +848,53 @@ def _tm_api_wait():
     global _TM_LAST_API_CALL
     import time
     now = time.monotonic()
-    wait = 1.65 - (now - _TM_LAST_API_CALL)
+    wait = 1.55 - (now - _TM_LAST_API_CALL)
     if wait > 0:
         time.sleep(wait)
     _TM_LAST_API_CALL = time.monotonic()
 
 
 def _tm_api_get(path, timeout=20):
-    _tm_api_wait()
-    try:
-        response = requests.get(
-            _TM_API_BASE + path,
-            timeout=timeout,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-            },
-        )
-    except requests.RequestException:
-        return None, "Transfermarkt-API konnte nicht erreicht werden."
+    """Robuster Zugriff auf die Transfermarkt-API mit Retry bei 429/5xx."""
+    import time
+    last_error = None
+    for attempt in range(4):
+        _tm_api_wait()
+        try:
+            response = requests.get(
+                _TM_API_BASE + path,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "Matchblatt/1.0",
+                    "Accept": "application/json",
+                },
+            )
+        except requests.RequestException as exc:
+            last_error = str(exc)
+            if attempt < 3:
+                time.sleep(2.0)
+                continue
+            return None, f"Transfermarkt-API nicht erreichbar: {last_error}"
 
-    if response.status_code != 200:
-        return None, f"Transfermarkt-API HTTP {response.status_code}."
+        if response.status_code == 200:
+            try:
+                return response.json(), None
+            except ValueError:
+                return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
 
-    try:
-        return response.json(), None
-    except ValueError:
-        return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
+        last_error = f"HTTP {response.status_code}"
+        if response.status_code in (429, 500, 502, 503, 504) and attempt < 3:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = max(2.0, float(retry_after)) if retry_after else 3.0
+            except (TypeError, ValueError):
+                delay = 3.0
+            time.sleep(delay)
+            continue
+
+        return None, f"Transfermarkt-API {last_error}."
+
+    return None, f"Transfermarkt-API {last_error or 'unbekannter Fehler'}."
 
 
 def _tm_team_from_side(side):
@@ -952,7 +972,7 @@ def _tm_api_last_match(player_id, current_id, team_id):
         if not isinstance(match, dict):
             continue
 
-        game_id = str(match.get("gameId", match.get("game_id", "")))
+        game_id = str(match.get("gameId", ""))
         if game_id == str(current_id):
             continue
 
@@ -964,8 +984,8 @@ def _tm_api_last_match(player_id, current_id, team_id):
 
         club_name = club.get("name", "") if isinstance(club, dict) else ""
         opponent_name = opponent.get("name", "") if isinstance(opponent, dict) else ""
-        club_goals = match.get("clubGoals", match.get("club_goals"))
-        opponent_goals = match.get("opponentGoals", match.get("opponent_goals"))
+        club_goals = match.get("clubGoals")
+        opponent_goals = match.get("opponentGoals")
         if not club_name or not opponent_name or club_goals is None or opponent_goals is None:
             continue
 
@@ -1022,18 +1042,11 @@ def _lade_transfermarkt_api(url, teamname):
             f"Transfermarkt-API: Team '{teamname}' passt nicht zu '{home_team}' oder '{away_team}'."
         )
 
-    # In der aktuellen API 5.x liegt der Spielstand NICHT unter
-    # root["score"]. Er steht direkt in home["score"] und away["score"].
-    # Die API kann je nach Pydantic-Serialisierung camelCase oder
-    # snake_case liefern; die beiden Varianten werden deshalb akzeptiert.
-    home_goals = _tm_player_value(home_side, "score", "goals")
-    away_goals = _tm_player_value(away_side, "score", "goals")
-    if home_goals is None or away_goals is None:
-        # Letzter Fallback für ältere/abweichende API-Antworten.
-        score = root.get("score")
-        if isinstance(score, dict):
-            home_goals = score.get("home")
-            away_goals = score.get("away")
+    score = root.get("score")
+    if not isinstance(score, dict):
+        raise ValueError("Transfermarkt-API: Resultat fehlt.")
+    home_goals = score.get("home")
+    away_goals = score.get("away")
     if home_goals is None or away_goals is None:
         raise ValueError("Transfermarkt-API: Heim-/Gasttore fehlen.")
 
@@ -1051,8 +1064,6 @@ def _lade_transfermarkt_api(url, teamname):
 
     formation = own_side.get("formation") or ""
     players = own_side.get("startingLineup")
-    if players is None:
-        players = own_side.get("starting_lineup")
     if not isinstance(players, list) or len(players) < 11:
         raise ValueError(
             f"Transfermarkt-API: Aufstellung für {own_team} fehlt oder enthält weniger als 11 Spieler."
@@ -1077,7 +1088,7 @@ def _lade_transfermarkt_api(url, teamname):
     # Für das Matchblatt wird zusätzlich das letzte Spiel benötigt.
     # Nur EIN Spieler pro Team wird abgefragt; die API liefert dessen
     # komplette Match-Historie. So bleiben die Requests überschaubar.
-    first_player_id = _tm_player_value(players[0], "id", "playerId", "player_id")
+    first_player_id = _tm_player_value(players[0], "id", "playerId")
     last = _tm_api_last_match(first_player_id, match_id, own_id)
     if last:
         last_team, last_opponent, last_own, last_opp = last
@@ -1118,6 +1129,13 @@ def lade_transfermarkt(
     api_result = _lade_transfermarkt_api(url, teamname)
     if api_result is not None:
         return api_result
+
+    # Nicht mehr auf die normale Transfermarkt-Seite zurückfallen: Render
+    # erhält dort nachweislich nur die Human-Verification-Seite.
+    raise ValueError(
+        "Transfermarkt-Daten konnten über die JSON-API nicht geladen werden. "
+        "Die HTML-Seite wird auf Render von Transfermarkt blockiert."
+    )
 
     html = ""
     navigation_error = None
