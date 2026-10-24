@@ -1206,7 +1206,7 @@ def _tm_make_coordinates(players, formation, is_home):
                 "nummer": str(number) if number is not None else "",
                 "name": str(name).strip(),
                 "x": x,
-                "y": y if is_home else 100.0 - y,
+                "y": y,
             })
 
     return result
