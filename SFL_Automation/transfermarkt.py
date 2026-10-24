@@ -1035,7 +1035,12 @@ def _tm_position_sort_key(player, group):
 
 
 def _tm_make_coordinates(players, formation, is_home):
-    """Ordnet die Startelf anhand der tatsächlichen Positionen und Formation."""
+    """Build match-sheet coordinates from player positions.
+
+    Transfermarkt does not guarantee that the lineup array is in the visual
+    left-to-right order shown on the pitch.  Therefore players are first
+    assigned to the four formation rows and only then sorted horizontally.
+    """
     nums = [int(x) for x in re.findall(r"\d+", formation or "")]
     if len(nums) != 3 or sum(nums) != 10:
         nums = [4, 3, 3]
@@ -1044,29 +1049,57 @@ def _tm_make_coordinates(players, formation, is_home):
     if len(lineup) != 11:
         return []
 
-    def group(p):
-        g = _tm_position_group(p)
-        if g == "goalkeeper":
+    # Keep the position information broad enough for Transfermarkt's
+    # English/German position labels, but make the goalkeeper/defender
+    # checks win before winger/forward checks.
+    def natural_group(player):
+        pos = _tm_position_text(player).lower()
+
+        if any(x in pos for x in (
+            "goalkeeper", "goalie", "keeper", "torwart", "tw"
+        )):
             return "goalkeeper"
-        if g == "defender":
+
+        if any(x in pos for x in (
+            "centre-back", "center-back", "central defender",
+            "left-back", "right-back", "full-back", "fullback",
+            "defender", "innenverteidiger", "aussenverteidiger",
+            "außenverteidiger", "linksverteidiger", "rechtsverteidiger"
+        )):
             return "defender"
-        if g == "striker":
+
+        if any(x in pos for x in (
+            "striker", "centre-forward", "center-forward",
+            "centre forward", "center forward", "forward", "stürmer"
+        )):
             return "striker"
-        # Winger gehören in einer 4-4-2-Formation ins Mittelfeld.
-        if g == "wing":
-            return "midfielder"
-        if g == "midfielder":
-            return "midfielder"
-        return ""
 
-    # Zuerst nach der tatsächlichen Hauptposition gruppieren.
-    buckets = {"goalkeeper": [], "defender": [], "midfielder": [], "striker": [], "unknown": []}
-    for p in lineup:
-        g = group(p)
-        buckets[g if g else "unknown"].append(p)
+        if any(x in pos for x in (
+            "midfielder", "midfield", "defensive midfield",
+            "central midfield", "attacking midfield", "left midfield",
+            "right midfield", "mittelfeld", "zentrales mittelfeld",
+            "defensives mittelfeld", "offensives mittelfeld"
+        )):
+            return "midfielder"
 
-    # Die Formation gibt die Soll-Anzahl je Reihe vor. Unklare Spieler werden
-    # nur dann als Füller verwendet, wenn die Positionsdaten nicht ausreichen.
+        if any(x in pos for x in (
+            "left winger", "right winger", "left wing", "right wing",
+            "winger", "aussenstürmer", "außenstürmer", "flügel"
+        )):
+            return "midfielder"
+
+        return "unknown"
+
+    buckets = {
+        "goalkeeper": [],
+        "defender": [],
+        "midfielder": [],
+        "striker": [],
+        "unknown": [],
+    }
+    for player in lineup:
+        buckets[natural_group(player)].append(player)
+
     needed = {
         "goalkeeper": 1,
         "defender": nums[0],
@@ -1074,60 +1107,88 @@ def _tm_make_coordinates(players, formation, is_home):
         "striker": nums[2],
     }
 
-    rows = {"goalkeeper": [], "defender": [], "midfielder": [], "striker": []}
+    rows = {name: [] for name in needed}
+
+    # First take players whose natural position matches the row.
     for name in ("goalkeeper", "defender", "midfielder", "striker"):
         rows[name] = buckets[name][:needed[name]]
 
-    # Fehlende Plätze mit noch nicht zugeordneten Spielern auffüllen.
-    used = {id(p) for row in rows.values() for p in row}
-    remaining = [p for p in lineup if id(p) not in used]
+    # Never move a recognised goalkeeper out of goal.  Fill only non-goalkeeper
+    # gaps from players whose position could not be resolved or from an excess
+    # bucket.  This is the important guard against Omlin becoming a field player.
+    used = {id(player) for row in rows.values() for player in row}
+    remaining = [player for player in lineup if id(player) not in used]
+
     for name in ("defender", "midfielder", "striker"):
         missing = needed[name] - len(rows[name])
-        if missing > 0:
-            take = remaining[:missing]
-            rows[name].extend(take)
-            remaining = remaining[missing:]
+        if missing <= 0:
+            continue
+        take = remaining[:missing]
+        rows[name].extend(take)
+        remaining = remaining[missing:]
 
-    if len(rows["goalkeeper"]) != 1 or any(len(rows[k]) != needed[k] for k in ("defender", "midfielder", "striker")):
+    if len(rows["goalkeeper"]) != 1:
+        return []
+    if any(len(rows[name]) != needed[name] for name in ("defender", "midfielder", "striker")):
         return []
 
-    def sort_key(p, row):
-        pos = _tm_position_text(p).lower()
+    def horizontal_key(player, row):
+        pos = _tm_position_text(player).lower()
+
         if row == "defender":
-            if any(x in pos for x in ("left-back", "left back", "leftback", "linker außenverteidiger", "linksverteidiger")):
-                return 10
-            if any(x in pos for x in ("right-back", "right back", "rightback", "rechter außenverteidiger", "rechtsverteidiger")):
-                return 40
-            return 25
-        if row == "midfielder":
-            if any(x in pos for x in ("left winger", "left wing", "left midfield", "left midfielder", "left-sided", "linker flügel", "linkes mittelfeld")):
-                return 10
-            if any(x in pos for x in ("right winger", "right wing", "right midfield", "right midfielder", "right-sided", "rechter flügel", "rechtes mittelfeld")):
-                return 40
-            # Die beiden zentralen Mittelfeldplätze bilden im 4-4-2-Doppel-6
-            # eine gemeinsame Gruppe. Die API-Reihenfolge bleibt als Tie-Breaker
-            # erhalten; so bleibt z.B. Metinho vor Omeragic, wie im Matchblatt.
             if any(x in pos for x in (
-                "defensive midfield", "defensive midfielder", "central defensive",
-                "defensives mittelfeld", "central midfield", "central midfielder",
-                "centre midfield", "centre midfielder", "center midfield",
-                "center midfielder", "zentrales mittelfeld", "attacking midfield",
-                "attacking midfielder", "offensive midfield", "offensives mittelfeld"
+                "left-back", "left back", "leftback", "linksverteidiger",
+                "linker außenverteidiger", "linker aussenverteidiger"
             )):
-                return 25
-            return 25
+                return (10, 0)
+            if any(x in pos for x in (
+                "right-back", "right back", "rightback", "rechtsverteidiger",
+                "rechter außenverteidiger", "rechter aussenverteidiger"
+            )):
+                return (40, 0)
+            # Centre-backs occupy the two middle positions. Stable ordering
+            # preserves the order supplied by Transfermarkt between them.
+            return (25, 0)
+
+        if row == "midfielder":
+            if any(x in pos for x in (
+                "left winger", "left wing", "left midfield", "left midfielder",
+                "left-sided", "linker flügel", "linkes mittelfeld"
+            )):
+                return (10, 0)
+            if any(x in pos for x in (
+                "right winger", "right wing", "right midfield", "right midfielder",
+                "right-sided", "rechter flügel", "rechtes mittelfeld"
+            )):
+                return (40, 0)
+            # Central/defensive/attacking midfielders are deliberately kept
+            # together in the centre; Python's stable sort preserves their
+            # original Transfermarkt order.
+            return (25, 0)
+
         if row == "striker":
-            if any(x in pos for x in ("left winger", "left wing", "left forward", "left-sided", "linker flügel")):
-                return 10
-            if any(x in pos for x in ("right winger", "right wing", "right forward", "right-sided", "rechter flügel")):
-                return 30
-            return 20
-        return 20
+            if any(x in pos for x in (
+                "left forward", "left-sided", "left winger", "left wing",
+                "linker flügel"
+            )):
+                return (10, 0)
+            if any(x in pos for x in (
+                "right forward", "right-sided", "right winger", "right wing",
+                "rechter flügel"
+            )):
+                return (30, 0)
+            return (20, 0)
 
+        return (20, 0)
+
+    # IMPORTANT: sort the actual row variable. Do not reference an undefined
+    # `row` while assigning into the rows dictionary.
     ordered_rows = [rows["goalkeeper"]]
-    for name in ("defender", "midfielder", "striker"):
-        ordered_rows.append(sorted(rows[name], key=lambda p: sort_key(p, name)))
+    for row_name in ("defender", "midfielder", "striker"):
+        row = rows[row_name]
+        ordered_rows.append(sorted(row, key=lambda player: horizontal_key(player, row_name)))
 
+    # Match-sheet graphic: attack at top, goalkeeper at bottom.
     y_values = [88.0, 70.0, 50.0, 31.0]
     result = []
     for row_index, row in enumerate(ordered_rows):
@@ -1136,7 +1197,9 @@ def _tm_make_coordinates(players, formation, is_home):
         for j, player in enumerate(row):
             x = 50.0 if count == 1 else 12.0 + (76.0 * j / (count - 1))
             name = _tm_player_value(player, "name", "playerName", "fullName")
-            number = _tm_player_value(player, "shirtNumber", "shirt_number", "number", "jerseyNumber")
+            number = _tm_player_value(
+                player, "shirtNumber", "shirt_number", "number", "jerseyNumber"
+            )
             if not name:
                 continue
             result.append({
@@ -1145,6 +1208,7 @@ def _tm_make_coordinates(players, formation, is_home):
                 "x": x,
                 "y": y if is_home else 100.0 - y,
             })
+
     return result
 
 def _tm_api_last_match(player_id, current_id, team_id):
