@@ -850,6 +850,12 @@ def lade_transfermarkt(
             "Teamname fehlt."
         )
 
+    html = ""
+    navigation_error = None
+    response_status = None
+    final_url = url
+    page_title = ""
+
     with sync_playwright() as p:
 
         browser = p.chromium.launch(
@@ -858,26 +864,46 @@ def lade_transfermarkt(
 
         try:
 
-            page = browser.new_page()
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                locale="de-CH",
+                extra_http_headers={
+                    "Accept-Language": "de-CH,de;q=0.9,en;q=0.8"
+                }
+            )
 
             try:
 
-                page.goto(
+                response = page.goto(
                     url,
-                    wait_until="commit",
+                    wait_until="domcontentloaded",
                     timeout=30000
                 )
 
+                if response is not None:
+                    response_status = response.status
+
+                final_url = page.url
+
+            except Exception as exc:
+                navigation_error = exc
+
+            # Transfermarkt kann Inhalte erst nach dem Laden
+            # nachziehen. Kurz warten, ohne von einem bestimmten
+            # Selector abhängig zu sein.
+            try:
+                page.wait_for_timeout(2500)
             except Exception:
                 pass
 
             try:
-                page.wait_for_selector(
-                    "div.formation-player-container",
-                    timeout=8000
-                )
+                page_title = page.title()
             except Exception:
-                pass
+                page_title = ""
 
             html = page.content()
 
@@ -888,13 +914,61 @@ def lade_transfermarkt(
     if not html:
         if navigation_error is not None:
             raise ValueError(
-                "Transfermarkt-Seite konnte nicht geladen werden: "
-                f"{navigation_error}"
+                "Transfermarkt-Seite konnte nicht geladen werden. "
+                f"URL: {url} | Fehler: {navigation_error}"
             ) from navigation_error
 
         raise ValueError(
-            "Transfermarkt-Seite konnte "
-            "nicht geladen werden."
+            "Transfermarkt-Seite konnte nicht geladen werden."
+        )
+
+    # ---------------------------------------------------------
+    # DIAGNOSE: Block-/Challenge-Seite erkennen
+    # ---------------------------------------------------------
+
+    html_lower = html.lower()
+    text_preview = BeautifulSoup(
+        html,
+        "html.parser"
+    ).get_text(" ", strip=True)
+
+    block_markers = (
+        "access denied",
+        "forbidden",
+        "captcha",
+        "verify you are human",
+        "checking your browser",
+        "just a moment",
+        "robot",
+        "bot detection",
+        "aws waf",
+        "cloudfront",
+    )
+
+    found_markers = [
+        marker
+        for marker in block_markers
+        if marker in html_lower or marker in text_preview.lower()
+    ]
+
+    if (
+        response_status is not None
+        and response_status >= 400
+    ) or found_markers:
+
+        preview = re.sub(
+            r"\s+",
+            " ",
+            text_preview
+        )[:500]
+
+        raise ValueError(
+            "Transfermarkt liefert keine normale Spielseite. "
+            f"HTTP-Status: {response_status}; "
+            f"Titel: {page_title!r}; "
+            f"End-URL: {final_url}; "
+            f"Erkannte Hinweise: {', '.join(found_markers) or 'keine'}; "
+            f"Seiteninhalt: {preview!r}"
         )
 
     soup = BeautifulSoup(
