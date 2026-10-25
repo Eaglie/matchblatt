@@ -855,26 +855,43 @@ def _tm_api_wait():
 
 
 def _tm_api_get(path, timeout=20):
-    _tm_api_wait()
-    try:
-        response = requests.get(
-            _TM_API_BASE + path,
-            timeout=timeout,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-            },
-        )
-    except requests.RequestException:
-        return None, "Transfermarkt-API konnte nicht erreicht werden."
+    """Lädt einen API-Endpunkt mit Retry für vorübergehende 5xx-Fehler."""
+    import time
 
-    if response.status_code != 200:
-        return None, f"Transfermarkt-API HTTP {response.status_code}."
+    max_attempts = 3
+    last_error = None
 
-    try:
-        return response.json(), None
-    except ValueError:
-        return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
+    for attempt in range(1, max_attempts + 1):
+        _tm_api_wait()
+        try:
+            response = requests.get(
+                _TM_API_BASE + path,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "application/json",
+                },
+            )
+        except requests.RequestException:
+            last_error = "Transfermarkt-API konnte nicht erreicht werden."
+            if attempt < max_attempts:
+                time.sleep(1.0)
+                continue
+            return None, last_error
+
+        if response.status_code == 200:
+            try:
+                return response.json(), None
+            except ValueError:
+                return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
+
+        last_error = f"Transfermarkt-API HTTP {response.status_code}."
+        if response.status_code not in (502, 503, 504) or attempt >= max_attempts:
+            return None, last_error
+
+        time.sleep(1.0)
+
+    return None, last_error or "Transfermarkt-API fehlgeschlagen."
 
 
 def _tm_team_from_side(side):
@@ -990,9 +1007,7 @@ def _lade_transfermarkt_api(url, teamname):
     match_id = match.group(1)
     root, error = _tm_api_get(f"/games/{match_id}")
     if not isinstance(root, dict):
-        # API kann zeitweise 5xx/504 liefern. In diesem Fall NICHT abbrechen,
-        # sondern den bereits vorhandenen Playwright/HTML-Abruf verwenden.
-        return None
+        raise ValueError(error or "Transfermarkt-API liefert keine Spieldaten.")
 
     # Aktuelles API-5.0-Schema: home/away sind direkt auf oberster Ebene.
     home_side = root.get("home")
@@ -1100,312 +1115,16 @@ def lade_transfermarkt(
     url,
     teamname=""
 ):
+    """Lädt ein Spiel ausschließlich über die Transfermarkt-JSON-API.
 
+    Die normale Transfermarkt-Webseite wird bewusst nicht als Fallback verwendet,
+    weil sie serverseitig mit Human Verification/405 geblockt werden kann.
+    """
     if not url:
-
-        raise ValueError(
-            "Transfermarkt-URL fehlt."
-        )
+        raise ValueError("Transfermarkt-URL fehlt.")
 
     if not teamname:
+        raise ValueError("Teamname fehlt.")
 
-        raise ValueError(
-            "Teamname fehlt."
-        )
+    return _lade_transfermarkt_api(url, teamname)
 
-    # Render wird von Transfermarkt auf der normalen HTML-Seite geblockt.
-    # Deshalb zuerst die aktuelle Transfermarkt-JSON-API verwenden.
-    api_result = _lade_transfermarkt_api(url, teamname)
-    if api_result is not None:
-        return api_result
-
-    html = ""
-    navigation_error = None
-    response_status = None
-    final_url = url
-    page_title = ""
-
-    with sync_playwright() as p:
-
-        browser = p.chromium.launch(
-            headless=True
-        )
-
-        try:
-
-            page = browser.new_page(
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-                locale="de-CH",
-                extra_http_headers={
-                    "Accept-Language": "de-CH,de;q=0.9,en;q=0.8"
-                }
-            )
-
-            try:
-
-                response = page.goto(
-                    url,
-                    wait_until="domcontentloaded",
-                    timeout=30000
-                )
-
-                if response is not None:
-                    response_status = response.status
-
-                final_url = page.url
-
-            except Exception as exc:
-                navigation_error = exc
-
-            # Transfermarkt kann Inhalte erst nach dem Laden
-            # nachziehen. Kurz warten, ohne von einem bestimmten
-            # Selector abhängig zu sein.
-            try:
-                page.wait_for_timeout(2500)
-            except Exception:
-                pass
-
-            try:
-                page_title = page.title()
-            except Exception:
-                page_title = ""
-
-            html = page.content()
-
-        finally:
-
-            browser.close()
-
-    if not html:
-        if navigation_error is not None:
-            raise ValueError(
-                "Transfermarkt-Seite konnte nicht geladen werden. "
-                f"URL: {url} | Fehler: {navigation_error}"
-            ) from navigation_error
-
-        raise ValueError(
-            "Transfermarkt-Seite konnte nicht geladen werden."
-        )
-
-    # ---------------------------------------------------------
-    # DIAGNOSE: Block-/Challenge-Seite erkennen
-    # ---------------------------------------------------------
-
-    html_lower = html.lower()
-    text_preview = BeautifulSoup(
-        html,
-        "html.parser"
-    ).get_text(" ", strip=True)
-
-    block_markers = (
-        "access denied",
-        "forbidden",
-        "captcha",
-        "verify you are human",
-        "checking your browser",
-        "just a moment",
-        "robot",
-        "bot detection",
-        "aws waf",
-        "cloudfront",
-    )
-
-    found_markers = [
-        marker
-        for marker in block_markers
-        if marker in html_lower or marker in text_preview.lower()
-    ]
-
-    if (
-        response_status is not None
-        and response_status >= 400
-    ) or found_markers:
-
-        preview = re.sub(
-            r"\s+",
-            " ",
-            text_preview
-        )[:500]
-
-        raise ValueError(
-            "Transfermarkt liefert keine normale Spielseite. "
-            f"HTTP-Status: {response_status}; "
-            f"Titel: {page_title!r}; "
-            f"End-URL: {final_url}; "
-            f"Erkannte Hinweise: {', '.join(found_markers) or 'keine'}; "
-            f"Seiteninhalt: {preview!r}"
-        )
-
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
-
-    # ---------------------------------------------------------
-    # MANNSCHAFTEN
-    # ---------------------------------------------------------
-
-    (
-        heim_team,
-        gast_team,
-        is_heim
-    ) = _extract_team_names(
-        soup,
-        teamname
-    )
-
-    # ---------------------------------------------------------
-    # GEGNER
-    # ---------------------------------------------------------
-
-    if is_heim:
-
-        gegner = gast_team
-
-    else:
-
-        gegner = heim_team
-
-    if _team_match(
-        teamname,
-        gegner
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Gegner entspricht "
-            "dem eigenen Team."
-        )
-
-    # ---------------------------------------------------------
-    # RESULTAT
-    # ---------------------------------------------------------
-
-    (
-        h_tore,
-        g_tore
-    ) = _extract_score(
-        soup
-    )
-
-    if is_heim:
-
-        eigenes_resultat = (
-            f"{h_tore}:{g_tore}"
-        )
-
-        eigene = h_tore
-        fremde = g_tore
-
-    else:
-
-        eigenes_resultat = (
-            f"{g_tore}:{h_tore}"
-        )
-
-        eigene = g_tore
-        fremde = h_tore
-
-    # ---------------------------------------------------------
-    # AUSGANG
-    # ---------------------------------------------------------
-
-    if eigene > fremde:
-
-        ausgang = "Sieg"
-
-    elif eigene < fremde:
-
-        ausgang = "Niederlage"
-
-    else:
-
-        ausgang = "Unentschieden"
-
-    # ---------------------------------------------------------
-    # FORMATION
-    # ---------------------------------------------------------
-
-    formation = _extract_formation(
-        soup
-    )
-
-    # ---------------------------------------------------------
-    # SPIELER
-    # ---------------------------------------------------------
-
-    spieler = _extract_players(
-        soup,
-        is_heim,
-        teamname
-    )
-
-    # LETZTES SPIEL: Resultat und Gegner aus dem Vereins-Spielplan.
-    letztes_spiel = _extract_last_match_from_schedule(
-        soup,
-        teamname,
-        url
-    )
-
-    if letztes_spiel:
-        eigenes_resultat = letztes_spiel["resultat"]
-        gegner = letztes_spiel["gegner"]
-        ausgang = letztes_spiel["ausgang"]
-
-    # ---------------------------------------------------------
-    # ABSCHLIESSENDE SICHERHEITSPRÜFUNGEN
-    # ---------------------------------------------------------
-
-    erkanntes_team = (
-        heim_team
-        if is_heim
-        else gast_team
-    )
-
-    if not _team_match(
-        teamname,
-        erkanntes_team
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Sicherheitsprüfung "
-            "der Teamzuordnung fehlgeschlagen."
-        )
-
-    if _team_match(
-        erkanntes_team,
-        gegner
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Eigenes Team und "
-            "Gegner sind identisch."
-        )
-
-    if len(spieler) != 11:
-
-        raise ValueError(
-            "Transfermarkt: Es müssen exakt "
-            "11 Startspieler vorhanden sein."
-        )
-
-    return {
-        "logo": "",
-
-        "team": erkanntes_team,
-
-        "formation": formation,
-
-        "resultat": eigenes_resultat,
-
-        "letzter_gegner": gegner,
-
-        "gegner": gegner,
-
-        "ausgang": ausgang,
-
-        "spieler": spieler,
-    }
