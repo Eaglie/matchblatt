@@ -896,77 +896,21 @@ def _tm_player_value(player, *keys):
 
 
 def _tm_make_coordinates(players, formation, is_home):
-    """
-    Übernimmt die tatsächlichen Transfermarkt-Positionswerte, wenn die API
-    sie liefert (styleLeft/styleTop). Genau diese Werte entsprechen der
-    taktischen Anordnung der Transfermarkt-Grafik.
-
-    Nur wenn ein API-Spieler keine Positionswerte besitzt, wird als Fallback
-    eine formation-basierte Anordnung erzeugt.
-    """
-    result = []
-    has_real_coordinates = True
-
-    for player in players:
-        if not isinstance(player, dict):
-            has_real_coordinates = False
-            break
-
-        left = _tm_player_value(
-            player, "styleLeft", "style_left", "left", "x"
-        )
-        top = _tm_player_value(
-            player, "styleTop", "style_top", "top", "y"
-        )
-
-        try:
-            if left is None or top is None:
-                raise ValueError
-            float(left)
-            float(top)
-        except (TypeError, ValueError):
-            has_real_coordinates = False
-            break
-
-    if has_real_coordinates:
-        for player in players:
-            name = _tm_player_value(
-                player, "name", "playerName", "fullName"
-            )
-            number = _tm_player_value(
-                player,
-                "shirtNumber", "shirt_number", "number", "jerseyNumber"
-            )
-            left = float(_tm_player_value(
-                player, "styleLeft", "style_left", "left", "x"
-            ))
-            top = float(_tm_player_value(
-                player, "styleTop", "style_top", "top", "y"
-            ))
-
-            if name:
-                result.append({
-                    "nummer": str(number) if number is not None else "",
-                    "name": str(name).strip(),
-                    "x": left,
-                    "y": top,
-                })
-
-        return result
-
-    # Fallback nur für API-Versionen ohne styleLeft/styleTop.
+    """Erzeugt die x/y-Felder des bisherigen Matchblatt-Formats."""
     nums = [int(x) for x in re.findall(r"\d+", formation or "")]
     if sum(nums) != 10:
         nums = [4, 3, 3]
 
     rows = [1] + nums
     if sum(rows) != len(players):
+        # Fallback anhand der API-Reihenfolge.
         rows = [1, len(players) - 1]
 
     y_values = [88.0, 70.0, 50.0, 31.0, 16.0]
     if len(rows) > len(y_values):
         y_values = [88.0 - i * (72.0 / max(1, len(rows) - 1)) for i in range(len(rows))]
 
+    result = []
     index = 0
     for row_index, count in enumerate(rows):
         if count <= 0:
@@ -1046,20 +990,20 @@ def _lade_transfermarkt_api(url, teamname):
     match_id = match.group(1)
     root, error = _tm_api_get(f"/games/{match_id}")
     if not isinstance(root, dict):
-        # Auf Render bringt ein HTML-Fallback nichts: Transfermarkt blockiert
-        # dort die normale Webseite. Der konkrete API-Fehler wird ausgegeben.
-        raise ValueError(error or "Transfermarkt-API liefert keine Spieldaten.")
+        # API kann zeitweise 5xx/504 liefern. In diesem Fall NICHT abbrechen,
+        # sondern den bereits vorhandenen Playwright/HTML-Abruf verwenden.
+        return None
 
     # Aktuelles API-5.0-Schema: home/away sind direkt auf oberster Ebene.
     home_side = root.get("home")
     away_side = root.get("away")
     if not isinstance(home_side, dict) or not isinstance(away_side, dict):
-        raise ValueError("Transfermarkt-API: home/away-Aufstellung fehlt.")
+        return None
 
     home_team, home_id = _tm_team_from_side(home_side)
     away_team, away_id = _tm_team_from_side(away_side)
     if not home_team or not away_team:
-        raise ValueError("Transfermarkt-API: Heim- oder Gastteam fehlt.")
+        return None
 
     if _team_match(teamname, home_team):
         is_home = True
