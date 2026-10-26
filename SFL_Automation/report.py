@@ -74,17 +74,11 @@ def parse_val(val):
 
 
 def adjust_left(val):
-    try:
-        return float(val) + 5
-    except (TypeError, ValueError):
-        return val
+    return val
 
 
 def adjust_top(val):
-    try:
-        return float(val) + 12
-    except (TypeError, ValueError):
-        return val
+    return val
 
 
 def draw_players(spieler):
@@ -111,13 +105,13 @@ def draw_players(spieler):
             continue
         nummer = p.get("nummer", p.get("number", ""))
         name = p.get("name", p.get("spieler", ""))
-        left = adjust_left(p.get("left", p.get("x", 50)))
-        top = adjust_top(p.get("top", p.get("y", 50)))
+        left = p.get("left", p.get("x", 50))
+        top = p.get("top", p.get("y", 50))
 
         if goalkeeper_index == i:
-            # Torhüter exakt in der horizontalen Mitte des Strafraums.
-            # Die Feldspieler bleiben global verschoben.
+            # NUR den Torhüter setzen: Mittelpunkt exakt auf den Elfmeterpunkt.
             left = 50
+            top = 91.578947
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
