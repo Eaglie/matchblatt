@@ -109,9 +109,12 @@ def draw_players(spieler):
         top = p.get("top", p.get("y", 50))
 
         if goalkeeper_index == i:
-            # NUR den Torhüter setzen: Mittelpunkt exakt auf den Elfmeterpunkt.
-            left = 50
-            top = 87.5
+            # Torhüter unverändert lassen.
+            pass
+        else:
+            # Nur die Feldspieler als komplette Gruppe horizontal zentrieren.
+            # Die relativen Abstände bleiben unverändert.
+            left = left + 2.5
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
