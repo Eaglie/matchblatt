@@ -111,7 +111,7 @@ def draw_players(spieler):
         if goalkeeper_index == i:
             # NUR den Torhüter setzen: Mittelpunkt exakt auf den Elfmeterpunkt.
             left = 50
-            top = 91.578947
+            top = 87.5
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
