@@ -115,9 +115,9 @@ def draw_players(spieler):
         top = adjust_top(p.get("top", p.get("y", 50)))
 
         if goalkeeper_index == i:
-            # Torhüter bleibt Teil der global verschobenen Formation:
-            # gleiche horizontale Verschiebung wie die gesamte Mannschaft.
-            left = adjust_left(50)
+            # Torhüter exakt in der horizontalen Mitte des Strafraums.
+            # Die Feldspieler bleiben global verschoben.
+            left = 50
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
