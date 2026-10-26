@@ -22,7 +22,7 @@ body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;
 .team_name{flex:1;background:#17233f;color:#fff;padding:10px 16px;font-size:18px;font-weight:700;text-align:left;}
 .team_opponent{background:#17233f;color:rgba(255,255,255,.85);padding:10px 16px;font-size:16px;font-weight:400;text-align:right;margin-left:auto;}
 .team_body{display:grid;grid-template-columns:380px 1fr;gap:28px;padding:6px 18px 4px 18px;align-items:start;}
-.pitch{position:relative;width:380px;height:380px;border:1px solid #d7dfe8;border-radius:8px;background:#fff;overflow:hidden;}
+.pitch{position:relative;width:380px;height:380px;border:1px solid #d7dfe8;border-radius:8px;background:#fff;overflow:hidden;transform:translate(20px,10px);}
 .midline{position:absolute;left:0;right:0;top:50%;border-top:2px solid rgba(255,255,255,.85);}
 .centerdot{position:absolute;width:6px;height:6px;background:#fff;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
 .centercircle{position:absolute;width:74px;height:74px;border:1.5px solid #444;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
@@ -83,19 +83,40 @@ def adjust_top(val):
 
 def draw_players(spieler):
     html_parts = []
-    for p in spieler or []:
+
+    # Der Spieler mit der tiefsten Y-Position ist der Torhüter.
+    # Er steht unten exakt horizontal in der Mitte.
+    goalkeeper_index = None
+    max_y = None
+    for i, p in enumerate(spieler or []):
+        if not isinstance(p, dict):
+            continue
+        y = p.get("top", p.get("y"))
+        try:
+            y = float(y)
+        except (TypeError, ValueError):
+            continue
+        if max_y is None or y > max_y:
+            max_y = y
+            goalkeeper_index = i
+
+    for i, p in enumerate(spieler or []):
         if not isinstance(p, dict):
             continue
         nummer = p.get("nummer", p.get("number", ""))
         name = p.get("name", p.get("spieler", ""))
         left = p.get("left", p.get("x", 50))
         top = p.get("top", p.get("y", 50))
-        html_parts.append(f'''
+
+        if goalkeeper_index == i:
+            left = 50
+
+        html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
     <div class="player_circle">{html.escape(str(nummer))}</div>
     <div class="player_name">{html.escape(str(name))}</div>
     <div class="player_position"></div>
-</div>''')
+</div>""")
     return "".join(html_parts)
 
 
