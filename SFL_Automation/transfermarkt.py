@@ -913,7 +913,63 @@ def _tm_player_value(player, *keys):
 
 
 def _tm_make_coordinates(players, formation, is_home):
-    """Erzeugt die x/y-Felder des bisherigen Matchblatt-Formats."""
+    """
+    Verwendet zuerst die echten Transfermarkt-Koordinaten.
+
+    Das ist entscheidend: Die Reihenfolge der API-Spieler allein sagt nicht,
+    ob jemand Torhüter, Innenverteidiger oder Flügel ist. Wenn Transfermarkt
+    styleLeft/styleTop liefert, sind genau diese Werte die taktische Anordnung.
+    Nur wenn diese Werte fehlen, wird aus der Formation ein Fallback erzeugt.
+    """
+    has_real_coordinates = True
+
+    for player in players:
+        if not isinstance(player, dict):
+            has_real_coordinates = False
+            break
+
+        left = _tm_player_value(
+            player, "styleLeft", "style_left", "left", "x"
+        )
+        top = _tm_player_value(
+            player, "styleTop", "style_top", "top", "y"
+        )
+
+        try:
+            if left is None or top is None:
+                raise ValueError
+            float(left)
+            float(top)
+        except (TypeError, ValueError):
+            has_real_coordinates = False
+            break
+
+    if has_real_coordinates:
+        result = []
+        for player in players:
+            name = _tm_player_value(
+                player, "name", "playerName", "fullName"
+            )
+            number = _tm_player_value(
+                player, "shirtNumber", "shirt_number", "number", "jerseyNumber"
+            )
+            left = float(_tm_player_value(
+                player, "styleLeft", "style_left", "left", "x"
+            ))
+            top = float(_tm_player_value(
+                player, "styleTop", "style_top", "top", "y"
+            ))
+
+            if name:
+                result.append({
+                    "nummer": str(number) if number is not None else "",
+                    "name": str(name).strip(),
+                    "x": left,
+                    "y": top,
+                })
+
+        return result
+
     nums = [int(x) for x in re.findall(r"\d+", formation or "")]
     if sum(nums) != 10:
         nums = [4, 3, 3]
@@ -1111,20 +1167,140 @@ def _lade_transfermarkt_api(url, teamname):
     return result
 
 
+def _lade_transfermarkt_web(url, teamname):
+    """
+    Robuster Fallback über die gerenderte Transfermarkt-Seite.
+
+    Dieser Weg wird nur verwendet, wenn die öffentliche JSON-API nicht
+    erreichbar ist. Die vorhandenen Extraktoren liefern die echten
+    style-left/style-top-Koordinaten der Transfermarkt-Aufstellung.
+    """
+    if not url:
+        raise ValueError("Transfermarkt-URL fehlt.")
+    if not teamname:
+        raise ValueError("Teamname fehlt.")
+
+    html = ""
+    navigation_error = None
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(
+                viewport={"width": 1440, "height": 1200},
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+            )
+            try:
+                page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+            except Exception as exc:
+                navigation_error = exc
+
+            try:
+                page.wait_for_selector(
+                    "div.formation-player-container",
+                    timeout=15000,
+                )
+            except Exception:
+                pass
+
+            page.wait_for_timeout(2500)
+            html = page.content()
+        finally:
+            browser.close()
+
+    if not html:
+        raise ValueError(
+            "Transfermarkt-Seite konnte nicht geladen werden."
+            + (f" ({navigation_error})" if navigation_error else "")
+        )
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    heim_team, gast_team, is_heim = _extract_team_names(
+        soup, teamname
+    )
+
+    if is_heim:
+        opponent = gast_team
+    else:
+        opponent = heim_team
+
+    h_tore, g_tore = _extract_score(soup)
+    eigene = h_tore if is_heim else g_tore
+    fremde = g_tore if is_heim else h_tore
+
+    if eigene > fremde:
+        ausgang = "Sieg"
+    elif eigene < fremde:
+        ausgang = "Niederlage"
+    else:
+        ausgang = "Unentschieden"
+
+    formation = _extract_formation(soup)
+    spieler = _extract_players(soup, is_heim, teamname)
+
+    result = {
+        "logo": "",
+        "team": teamname,
+        "formation": formation,
+        "resultat": f"{eigene}:{fremde}",
+        "letzter_gegner": opponent,
+        "gegner": opponent,
+        "ausgang": ausgang,
+        "spieler": spieler,
+    }
+
+    # Das letzte Spiel darf NICHT das aktuell eingegebene Spiel sein.
+    # Der vorhandene Spielplan-Extractor schliesst die aktuelle Spiel-ID
+    # explizit aus und liest das Ergebnis aus der Ergebniszelle.
+    last = _extract_last_match_from_schedule(
+        soup,
+        teamname,
+        url,
+    )
+    if last:
+        result["resultat"] = last["resultat"]
+        result["letzter_gegner"] = last["gegner"]
+        result["gegner"] = last["gegner"]
+        result["ausgang"] = last["ausgang"]
+
+    return result
+
+
 def lade_transfermarkt(
     url,
     teamname=""
 ):
-    """Lädt ein Spiel ausschließlich über die Transfermarkt-JSON-API.
-
-    Die normale Transfermarkt-Webseite wird bewusst nicht als Fallback verwendet,
-    weil sie serverseitig mit Human Verification/405 geblockt werden kann.
-    """
+    """Lädt Transfermarkt-Daten. API zuerst, Webseite als Fallback."""
     if not url:
         raise ValueError("Transfermarkt-URL fehlt.")
 
     if not teamname:
         raise ValueError("Teamname fehlt.")
 
-    return _lade_transfermarkt_api(url, teamname)
+    try:
+        data = _lade_transfermarkt_api(url, teamname)
+        if isinstance(data, dict) and len(data.get("spieler", [])) == 11:
+            return data
+    except Exception as api_error:
+        # API-Ausfall darf das gesamte Matchblatt nicht mehr zerstören.
+        api_error_text = str(api_error)
+    else:
+        api_error_text = "Transfermarkt-API lieferte keine verwertbaren Daten."
+
+    try:
+        return _lade_transfermarkt_web(url, teamname)
+    except Exception as web_error:
+        raise ValueError(
+            "Transfermarkt konnte weder über die API noch über die Webseite "
+            f"geladen werden. API: {api_error_text} | Webseite: {web_error}"
+        ) from web_error
 
