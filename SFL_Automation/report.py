@@ -84,37 +84,44 @@ def adjust_top(val):
 def draw_players(spieler):
     html_parts = []
 
-    # Der Spieler mit der tiefsten Y-Position ist der Torhüter.
-    # Er steht unten exakt horizontal in der Mitte.
-    goalkeeper_index = None
-    max_y = None
+    # DIE GESAMTE MANNSCHAFT wird als eine Einheit verschoben:
+    # Torhüter + 10 Feldspieler. Relative Abstände bleiben exakt gleich.
+    positions = []
     for i, p in enumerate(spieler or []):
         if not isinstance(p, dict):
             continue
-        y = p.get("top", p.get("y"))
         try:
-            y = float(y)
+            x = float(p.get("left", p.get("x", 50)))
+            y = float(p.get("top", p.get("y", 50)))
         except (TypeError, ValueError):
             continue
-        if max_y is None or y > max_y:
-            max_y = y
-            goalkeeper_index = i
+        positions.append((i, x, y))
+
+    if positions:
+        team_center_x = sum(x for _, x, _ in positions) / len(positions)
+        team_center_y = sum(y for _, _, y in positions) / len(positions)
+
+        # Ein gemeinsamer Offset für ALLE Spieler.
+        offset_x = 50.0 - team_center_x
+        offset_y = 50.0 - team_center_y
+    else:
+        offset_x = 0.0
+        offset_y = 0.0
+
+    valid_indices = {i for i, _, _ in positions}
 
     for i, p in enumerate(spieler or []):
         if not isinstance(p, dict):
             continue
+
         nummer = p.get("nummer", p.get("number", ""))
         name = p.get("name", p.get("spieler", ""))
         left = p.get("left", p.get("x", 50))
         top = p.get("top", p.get("y", 50))
 
-        if goalkeeper_index == i:
-            # Torhüter unverändert lassen.
-            pass
-        else:
-            # Nur die Feldspieler als komplette Gruppe horizontal zentrieren.
-            # Die relativen Abstände bleiben unverändert.
-            left = left + 2.5
+        if i in valid_indices:
+            left = float(left) + offset_x
+            top = float(top) + offset_y
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
@@ -122,6 +129,7 @@ def draw_players(spieler):
     <div class="player_name">{html.escape(str(name))}</div>
     <div class="player_position"></div>
 </div>""")
+
     return "".join(html_parts)
 
 
