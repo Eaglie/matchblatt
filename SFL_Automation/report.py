@@ -74,11 +74,17 @@ def parse_val(val):
 
 
 def adjust_left(val):
-    return val
+    try:
+        return float(val) + 5
+    except (TypeError, ValueError):
+        return val
 
 
 def adjust_top(val):
-    return val
+    try:
+        return float(val) + 12
+    except (TypeError, ValueError):
+        return val
 
 
 def draw_players(spieler):
@@ -105,11 +111,13 @@ def draw_players(spieler):
             continue
         nummer = p.get("nummer", p.get("number", ""))
         name = p.get("name", p.get("spieler", ""))
-        left = p.get("left", p.get("x", 50))
-        top = p.get("top", p.get("y", 50))
+        left = adjust_left(p.get("left", p.get("x", 50)))
+        top = adjust_top(p.get("top", p.get("y", 50)))
 
         if goalkeeper_index == i:
-            left = 50
+            # Torhüter bleibt Teil der global verschobenen Formation:
+            # gleiche horizontale Verschiebung wie die gesamte Mannschaft.
+            left = adjust_left(50)
 
         html_parts.append(f"""
 <div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
