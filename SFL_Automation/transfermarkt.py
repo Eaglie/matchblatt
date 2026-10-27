@@ -461,37 +461,18 @@ def _lade_transfermarkt_api(url, teamname):
     }
 
 
-def lade_transfermarkt(url, teamname):
-    """
-    Zentrale Einstiegsfunktion für Streamlit:
-    Versucht zuerst die JSON-API. Bei Fehlern folgt ein robusterer
-    Playwright-Fallback mit echtem Desktop-Chrome-User-Agent.
-    """
-    try:
-        api_data = _lade_transfermarkt_api(url, teamname)
+def _is_schedule_url(url):
+    """Erkennt eine Transfermarkt-Vereins-/Spielplanseite."""
+    url = (url or "").lower()
+    return (
+        "/spielplandatum/" in url
+        or "/spielplan/" in url
+        or "/spielplan/" in url
+    )
 
-        if api_data:
-            heim_team = api_data["heim_team"]
-            gast_team = api_data["gast_team"]
 
-            return {
-                "team": teamname,
-                "heim_team": heim_team,
-                "gast_team": gast_team,
-                "spieler": api_data["spieler"],
-                "formation": api_data["formation"],
-                "resultat": f'{api_data["own_goals"]}:{api_data["opp_goals"]}',
-                "ausgang": api_data["ausgang"],
-                "letzter_gegner": (
-                    gast_team if api_data["is_home"] else heim_team
-                ),
-                "absenzen": {},
-                "is_home": api_data["is_home"],
-            }
-
-    except Exception as e:
-        print(f"API-Fehler (nutze Web-Scraping): {e}")
-
+def _load_page_html(url):
+    """Lädt eine Transfermarkt-Seite mit Playwright und liefert HTML."""
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -512,6 +493,7 @@ def lade_transfermarkt(url, teamname):
                     "Chrome/122.0.0.0 Safari/537.36"
                 ),
                 viewport={"width": 1920, "height": 1080},
+                locale="de-CH",
             )
 
             page = context.new_page()
@@ -522,11 +504,131 @@ def lade_transfermarkt(url, teamname):
             except Exception:
                 pass
 
-            soup = BeautifulSoup(page.content(), "html.parser")
+            html = page.content()
             context.close()
+            return html
 
         finally:
             browser.close()
+
+
+def _find_latest_match_report_url(soup, teamname):
+    """
+    Nimmt eine Transfermarkt-Vereins-/Spielplanseite und sucht daraus
+    den letzten bereits ausgetragenen Matchbericht.
+
+    Wichtig:
+    Die Vereinsseite ist NICHT selbst der Spielbericht. Wir suchen
+    deshalb explizit einen /spielbericht/...-Link in einer Spielzeile
+    mit einem echten Resultat und gehen vom letzten Spiel rückwärts.
+    """
+    kandidaten = []
+
+    # Transfermarkt verwendet unterschiedliche Tabellen-/Zeilenstrukturen.
+    # Wir prüfen deshalb jede Link-/Zeilenkombination und nicht nur
+    # einen einzelnen CSS-Selektor.
+    for a in soup.select('a[href*="/spielbericht/"]'):
+        href = a.get("href", "").strip()
+        if not href:
+            continue
+
+        if "/spielbericht/" not in href:
+            continue
+
+        parent = a
+        for _ in range(5):
+            parent = parent.parent
+            if parent is None:
+                break
+
+            row_text = parent.get_text(" ", strip=True)
+            if not row_text:
+                continue
+
+            # Ein abgeschlossenes Spiel hat ein Resultat wie 2:1.
+            # Terminierte Spiele haben -:- und werden ignoriert.
+            scores = re.findall(r"\b\d+\s*:\s*\d+\b", row_text)
+            if not scores:
+                continue
+
+            score = scores[-1]
+            if score == "-:-":
+                continue
+
+            # Der Link muss zu einem Spielbericht gehören, nicht zu
+            # einem beliebigen eingebetteten Inhalt.
+            kandidaten.append({
+                "href": href,
+                "text": row_text,
+            })
+            break
+
+    # Doppelte Links entfernen, Reihenfolge der Seite beibehalten.
+    eindeutig = []
+    gesehen = set()
+
+    for kandidat in kandidaten:
+        href = kandidat["href"]
+        if href in gesehen:
+            continue
+        gesehen.add(href)
+        eindeutig.append(kandidat)
+
+    if not eindeutig:
+        raise ValueError(
+            f"Transfermarkt: Auf der Vereinsseite von '{teamname}' "
+            "wurde kein abgeschlossenes Spiel mit Spielbericht gefunden."
+        )
+
+    # Die Transfermarkt-Spielplanseite ist chronologisch aufgebaut.
+    # Der letzte gefundene abgeschlossene Spielbericht ist somit das
+    # zuletzt ausgetragene Spiel.
+    href = eindeutig[-1]["href"]
+
+    if href.startswith("//"):
+        return "https:" + href
+    if href.startswith("/"):
+        return "https://www.transfermarkt.ch" + href
+
+    return href
+
+
+def _lade_transfermarkt_von_spielplan(url, teamname):
+    """
+    Vereins-/Spielplanseite -> letzter abgeschlossener Matchbericht
+    -> bestehende Matchbericht-Auswertung.
+    """
+    schedule_html = _load_page_html(url)
+    schedule_soup = BeautifulSoup(schedule_html, "html.parser")
+
+    report_url = _find_latest_match_report_url(schedule_soup, teamname)
+
+    # Für den Matchbericht zuerst die API versuchen.
+    api_data = _lade_transfermarkt_api(report_url, teamname)
+
+    if api_data:
+        heim_team = api_data["heim_team"]
+        gast_team = api_data["gast_team"]
+
+        return {
+            "team": teamname,
+            "heim_team": heim_team,
+            "gast_team": gast_team,
+            "spieler": api_data["spieler"],
+            "formation": api_data["formation"],
+            "resultat": f'{api_data["own_goals"]}:{api_data["opp_goals"]}',
+            "ausgang": api_data["ausgang"],
+            "letzter_gegner": (
+                gast_team if api_data["is_home"] else heim_team
+            ),
+            "absenzen": {},
+            "is_home": api_data["is_home"],
+        }
+
+    # API nicht verfügbar: echten Matchbericht laden und wie bisher
+    # mit BeautifulSoup auswerten.
+    report_html = _load_page_html(report_url)
+    soup = BeautifulSoup(report_html, "html.parser")
 
     heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
     score_tore = _extract_score(soup)
@@ -560,4 +662,94 @@ def lade_transfermarkt(url, teamname):
         "absenzen": {},
         "is_home": is_heim,
     }
+
+
+def lade_transfermarkt(url, teamname):
+    """
+    Zentrale Einstiegsfunktion für Streamlit.
+
+    Unterstützt BEIDE Transfermarkt-Quellen:
+    1. direkte /spielbericht/-URL
+    2. Vereins-/Spielplanseite (/spielplandatum/ bzw. /spielplan/)
+
+    Bei einer Vereinsseite wird zuerst automatisch das letzte
+    abgeschlossene Spiel gesucht und dessen Spielbericht verwendet.
+    """
+    if _is_schedule_url(url):
+        try:
+            return _lade_transfermarkt_von_spielplan(url, teamname)
+        except Exception as e:
+            raise ValueError(
+                f"Transfermarkt-Spielplan konnte für '{teamname}' "
+                f"nicht verarbeitet werden: {e}"
+            ) from e
+
+    # Direkter Matchbericht: API zuerst.
+    try:
+        api_data = _lade_transfermarkt_api(url, teamname)
+
+        if api_data:
+            heim_team = api_data["heim_team"]
+            gast_team = api_data["gast_team"]
+
+            return {
+                "team": teamname,
+                "heim_team": heim_team,
+                "gast_team": gast_team,
+                "spieler": api_data["spieler"],
+                "formation": api_data["formation"],
+                "resultat": f'{api_data["own_goals"]}:{api_data["opp_goals"]}',
+                "ausgang": api_data["ausgang"],
+                "letzter_gegner": (
+                    gast_team if api_data["is_home"] else heim_team
+                ),
+                "absenzen": {},
+                "is_home": api_data["is_home"],
+            }
+
+    except Exception as e:
+        print(f"API-Fehler (nutze Web-Scraping): {e}")
+
+    # Direkter Matchbericht: Browser-Fallback.
+    try:
+        html = _load_page_html(url)
+        soup = BeautifulSoup(html, "html.parser")
+
+        heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
+        score_tore = _extract_score(soup)
+
+        if is_heim:
+            eigene_tore, fremde_tore = score_tore
+            gegner = gast_team
+        else:
+            eigene_tore, fremde_tore = score_tore[1], score_tore[0]
+            gegner = heim_team
+
+        if eigene_tore > fremde_tore:
+            ausgang = "Sieg"
+        elif eigene_tore < fremde_tore:
+            ausgang = "Niederlage"
+        else:
+            ausgang = "Unentschieden"
+
+        formation = _extract_formation(soup)
+        spieler = _extract_players(soup, is_heim, teamname)
+
+        return {
+            "team": teamname,
+            "heim_team": heim_team,
+            "gast_team": gast_team,
+            "spieler": spieler,
+            "formation": formation,
+            "resultat": f"{eigene_tore}:{fremde_tore}",
+            "ausgang": ausgang,
+            "letzter_gegner": gegner,
+            "absenzen": {},
+            "is_home": is_heim,
+        }
+
+    except Exception as e:
+        raise ValueError(
+            f"Transfermarkt konnte für '{teamname}' nicht gelesen werden: {e}"
+        ) from e
 
