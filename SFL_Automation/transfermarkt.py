@@ -245,6 +245,119 @@ def _extract_players(soup, is_heim, teamname):
     return eindeutig
 
 
+def _tm_open_page(url):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ]
+        )
+        try:
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            return page.content()
+        finally:
+            browser.close()
+
+
+def _tm_report_url_from_club_page(soup, teamname):
+    """Find the latest completed match report on a Transfermarkt club/schedule page."""
+    candidates = []
+
+    for row in soup.select("tr"):
+        report = row.select_one('a[href*="/spielbericht/"]')
+        if not report:
+            continue
+
+        href = report.get("href", "").strip()
+        if not href:
+            continue
+        if href.startswith("/"):
+            href = "https://www.transfermarkt.ch" + href
+
+        text = row.get_text(" ", strip=True)
+        if not text:
+            continue
+
+        # Only use rows that look like completed matches.
+        if not re.search(r"\b\d+\s*:\s*\d+\b", text):
+            continue
+
+        # Prefer the date in the row. Transfermarkt normally exposes DD.MM.YYYY.
+        date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{4})\b", text)
+        if not date_match:
+            date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{2})\b", text)
+
+        if date_match:
+            raw_date = date_match.group(1)
+            fmt = "%d.%m.%Y" if len(raw_date.split(".")[-1]) == 4 else "%d.%m.%y"
+            try:
+                match_date = datetime.strptime(raw_date, fmt)
+            except ValueError:
+                match_date = datetime.min
+        else:
+            match_date = datetime.min
+
+        # Reject an unrelated match row if the target team is explicitly named
+        # and neither side of the row contains it.
+        team_links = [a.get_text(" ", strip=True) for a in row.select('a[href*="/startseite/verein/"]') if a.get_text(" ", strip=True)]
+        if team_links and not any(_team_match(teamname, t) for t in team_links):
+            continue
+
+        candidates.append((match_date, href))
+
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+
+    # Fallback: inspect report links on the page and use the first one that is
+    # accompanied by a completed score and target-team text.
+    fallback = []
+    for report in soup.select('a[href*="/spielbericht/"]'):
+        href = report.get("href", "").strip()
+        if not href:
+            continue
+        if href.startswith("/"):
+            href = "https://www.transfermarkt.ch" + href
+        parent = report
+        for _ in range(4):
+            parent = parent.parent if parent else None
+            if not parent:
+                break
+            text = parent.get_text(" ", strip=True)
+            if re.search(r"\b\d+\s*:\s*\d+\b", text) and _team_match(teamname, text):
+                fallback.append(href)
+                break
+    return fallback[0] if fallback else None
+
+
+def _tm_load_match_from_source(url, teamname):
+    """Open either a match report or a club/schedule source and return report HTML."""
+    html = _tm_open_page(url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Direct match-report URL: use it unchanged.
+    if re.search(r"/spielbericht/", url or ""):
+        return soup, url
+
+    report_url = _tm_report_url_from_club_page(soup, teamname)
+    if not report_url:
+        raise ValueError(
+            f"Transfermarkt: Auf der Vereins-/Spielplanseite konnte kein bereits gespieltes Match von '{teamname}' mit Spielbericht gefunden werden."
+        )
+
+    report_html = _tm_open_page(report_url)
+    return BeautifulSoup(report_html, "html.parser"), report_url
+
+
 # ---------------------------------------------------------
 # TRANSFERMARKT JSON-API
 # ---------------------------------------------------------
@@ -462,42 +575,26 @@ def _lade_transfermarkt_api(url, teamname):
 
 
 def lade_transfermarkt(url, teamname):
-    try:
-        api_data = _lade_transfermarkt_api(url, teamname)
-        if api_data:
-            return (
-                api_data["heim_team"],
-                api_data["gast_team"],
-                api_data["own_goals"],
-                api_data["opp_goals"],
-                api_data["ausgang"],
-                api_data["formation"],
-                api_data["spieler"],
-                api_data["is_home"]
-            )
-    except Exception:
-        pass
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ]
-        )
+    # API only makes sense when the supplied source is already a match report.
+    # Club/schedule URLs must first be resolved to the latest completed match.
+    if re.search(r"/spielbericht/", url or ""):
         try:
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            try:
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass
-            soup = BeautifulSoup(page.content(), "html.parser")
-        finally:
-            browser.close()
+            api_data = _lade_transfermarkt_api(url, teamname)
+            if api_data:
+                return (
+                    api_data["heim_team"],
+                    api_data["gast_team"],
+                    api_data["own_goals"],
+                    api_data["opp_goals"],
+                    api_data["ausgang"],
+                    api_data["formation"],
+                    api_data["spieler"],
+                    api_data["is_home"]
+                )
+        except Exception:
+            pass
+
+    soup, report_url = _tm_load_match_from_source(url, teamname)
 
     heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
     score_tore = _extract_score(soup)
@@ -523,3 +620,4 @@ def lade_transfermarkt(url, teamname):
         spieler,
         is_heim
     )
+
