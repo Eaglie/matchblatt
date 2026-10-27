@@ -817,11 +817,24 @@ def _extract_last_match_from_schedule(
         else:
             ausgang = "Unentschieden"
 
+        report_url = ""
+        for a_link in row.select('a[href*="/spielbericht/"]'):
+            href = a_link.get("href", "").strip()
+            if href:
+                if href.startswith("http"):
+                    report_url = href
+                else:
+                    host_match = re.match(r"(https?://[^/]+)", current_url or "")
+                    host = host_match.group(1) if host_match else "https://www.transfermarkt.ch"
+                    report_url = host + (href if href.startswith("/") else "/" + href)
+                break
+
         kandidaten.append({
             "datum": match_date,
             "resultat": eigenes,
             "gegner": opponent,
             "ausgang": ausgang,
+            "report_url": report_url,
         })
 
     if not kandidaten:
@@ -1245,7 +1258,69 @@ def _lade_transfermarkt_web(url, teamname):
         ausgang = "Unentschieden"
 
     formation = _extract_formation(soup)
-    spieler = _extract_players(soup, is_heim, teamname)
+
+    try:
+        spieler = _extract_players(soup, is_heim, teamname)
+    except Exception as lineup_error:
+        # Die SFL-URL kann auf eine Transfermarkt-Team-/Spielplanseite zeigen.
+        # Dort gibt es keine formation-player-container. In diesem Fall zuerst
+        # das tatsächlich letzte Spiel ermitteln und dessen Spielbericht öffnen.
+        last_for_lineup = _extract_last_match_from_schedule(
+            soup,
+            teamname,
+            url,
+        )
+        report_url = (
+            last_for_lineup.get("report_url", "")
+            if isinstance(last_for_lineup, dict)
+            else ""
+        )
+        if not report_url:
+            raise lineup_error
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1200},
+                    user_agent=(
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                )
+                page.goto(
+                    report_url,
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                try:
+                    page.wait_for_selector(
+                        "div.formation-player-container",
+                        timeout=15000,
+                    )
+                except Exception:
+                    pass
+                page.wait_for_timeout(2500)
+                report_soup = BeautifulSoup(page.content(), "html.parser")
+            finally:
+                browser.close()
+
+        heim_team, gast_team, is_heim = _extract_team_names(report_soup, teamname)
+        opponent = gast_team if is_heim else heim_team
+        h_tore, g_tore = _extract_score(report_soup)
+        eigene = h_tore if is_heim else g_tore
+        fremde = g_tore if is_heim else h_tore
+        if eigene > fremde:
+            ausgang = "Sieg"
+        elif eigene < fremde:
+            ausgang = "Niederlage"
+        else:
+            ausgang = "Unentschieden"
+        formation = _extract_formation(report_soup)
+        spieler = _extract_players(report_soup, is_heim, teamname)
+        soup = report_soup
+        url = report_url
 
     result = {
         "logo": "",
