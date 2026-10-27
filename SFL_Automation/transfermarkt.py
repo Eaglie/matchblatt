@@ -662,7 +662,15 @@ def _extract_last_match_from_schedule(
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
             try:
                 page = browser.new_page()
                 page.goto(
@@ -1197,7 +1205,15 @@ def _lade_transfermarkt_web(url, teamname):
     navigation_error = None
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
         try:
             page = browser.new_page(
                 viewport={"width": 1440, "height": 1200},
@@ -1279,7 +1295,15 @@ def _lade_transfermarkt_web(url, teamname):
             raise lineup_error
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
             try:
                 page = browser.new_page(
                     viewport={"width": 1440, "height": 1200},
