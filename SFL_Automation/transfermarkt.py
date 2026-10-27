@@ -149,7 +149,11 @@ def _extract_team_names(soup, teamname):
                     break
 
     if not heim_team or not gast_team:
-        raise ValueError("Transfermarkt: Heim- und Gastteam konnten nicht eindeutig gefunden werden.")
+        from_error = globals().get("_TM_LAST_DIAG", "")
+        raise ValueError(
+            "Transfermarkt: Heim- und Gastteam konnten nicht eindeutig gefunden werden."
+            + (f"\n\nDIAGNOSE: {from_error}" if from_error else "")
+        )
 
     if _team_match(heim_team, gast_team):
         raise ValueError("Transfermarkt: Heimteam und Gastteam sind identisch.")
@@ -245,6 +249,8 @@ def _extract_players(soup, is_heim, teamname):
     return eindeutig
 
 
+_TM_LAST_DIAG = ""
+
 def _tm_open_page(url):
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -267,8 +273,11 @@ def _tm_open_page(url):
             title = page.title() or ""
             low = html.lower()
             markers = [m for m in ("challenge", "captcha", "awswaf", "access denied", "forbidden", "verify you are human", "bot") if m in low]
-            print(f"[TRANSFERMARKT-DIAG] requested={url}")
-            print(f"[TRANSFERMARKT-DIAG] final={page.url} title={title!r} html_len={len(html)} markers={markers}")
+            global _TM_LAST_DIAG
+            _TM_LAST_DIAG = (
+                f"requested={url} | final={page.url} | title={title!r} "
+                f"| html_len={len(html)} | markers={markers}"
+            )
             return html
         finally:
             browser.close()
