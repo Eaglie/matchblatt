@@ -598,6 +598,33 @@ def _extract_players(
 
 
 
+
+def _matching_team_link(soup, teamname):
+    """Findet den Transfermarkt-Vereinslink, der zum erwarteten Team passt."""
+    for a in soup.select('a[href]'):
+        href = a.get("href", "").strip()
+        text = a.get_text(" ", strip=True)
+        title = a.get("title", "").strip()
+        if "/startseite/verein/" not in href:
+            continue
+        if _team_match(teamname, text) or _team_match(teamname, title):
+            return href
+    return ""
+
+
+def _team_schedule_url_from_link(href, season=""):
+    """Baut aus einem Transfermarkt-Vereinslink die Spielplan-URL."""
+    m = re.search(r"/([^/]+)/startseite/verein/(\d+)", href or "")
+    if not m:
+        return ""
+    slug, verein_id = m.group(1), m.group(2)
+    if season:
+        return (
+            f"https://www.transfermarkt.ch/{slug}/spielplan/verein/"
+            f"{verein_id}/saison_id/{season}/plus/1"
+        )
+    return f"https://www.transfermarkt.ch/{slug}/spielplan/verein/{verein_id}/plus/1"
+
 def _extract_last_match_from_schedule(
     soup,
     teamname,
@@ -1277,6 +1304,95 @@ def _lade_transfermarkt_web(url, teamname):
         )
 
     soup = BeautifulSoup(html, "html.parser")
+
+    # Die SFL kann gelegentlich eine Transfermarkt-URL des falschen Teams
+    # liefern bzw. die beiden URL-Felder können vertauscht sein. Wenn die
+    # geladene Seite einen eindeutigen Vereinslink für das erwartete Team
+    # enthält, verwenden wir diesen Verein statt der falschen URL.
+    matching_link = _matching_team_link(soup, teamname)
+    current_id_match = re.search(r"/verein/(\d+)", url or "")
+    current_id = current_id_match.group(1) if current_id_match else ""
+    matching_id_match = re.search(r"/startseite/verein/(\d+)", matching_link or "")
+    matching_id = matching_id_match.group(1) if matching_id_match else ""
+
+    if matching_link and matching_id and matching_id != current_id:
+        season_match = re.search(r"saison_id/(\d{4})", url or "")
+        season = season_match.group(1) if season_match else str(datetime.now().year)
+        corrected_url = _team_schedule_url_from_link(matching_link, season)
+        if corrected_url:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                    ],
+                )
+                try:
+                    page = browser.new_page(
+                        viewport={"width": 1440, "height": 1200},
+                        user_agent=(
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/131.0.0.0 Safari/537.36"
+                        ),
+                    )
+                    page.goto(corrected_url, wait_until="domcontentloaded", timeout=60000)
+                    try:
+                        page.wait_for_selector("div.formation-player-container", timeout=15000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(2500)
+                    soup = BeautifulSoup(page.content(), "html.parser")
+                    url = corrected_url
+                finally:
+                    browser.close()
+
+    # Eine Vereins-/Spielplanseite enthält keine Aufstellung. In diesem Fall
+    # sofort den neuesten tatsächlich gespielten Matchbericht öffnen.
+    if not soup.select("div.formation-player-container"):
+        last_for_lineup = _extract_last_match_from_schedule(
+            soup, teamname, url
+        )
+        report_url = (
+            last_for_lineup.get("report_url", "")
+            if isinstance(last_for_lineup, dict)
+            else ""
+        )
+        if report_url:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                    ],
+                )
+                try:
+                    page = browser.new_page(
+                        viewport={"width": 1440, "height": 1200},
+                        user_agent=(
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/131.0.0.0 Safari/537.36"
+                        ),
+                    )
+                    page.goto(report_url, wait_until="domcontentloaded", timeout=60000)
+                    try:
+                        page.wait_for_selector(
+                            "div.formation-player-container", timeout=15000
+                        )
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(2500)
+                    soup = BeautifulSoup(page.content(), "html.parser")
+                    url = report_url
+                finally:
+                    browser.close()
 
     heim_team, gast_team, is_heim = _extract_team_names(
         soup, teamname
