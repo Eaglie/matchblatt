@@ -469,13 +469,26 @@ def lade_transfermarkt(url, teamname):
     """
     try:
         api_data = _lade_transfermarkt_api(url, teamname)
+
         if api_data:
-            return (
-                api_data["heim_team"], api_data["gast_team"],
-                api_data["own_goals"], api_data["opp_goals"],
-                api_data["ausgang"], api_data["formation"],
-                api_data["spieler"], api_data["is_home"]
-            )
+            heim_team = api_data["heim_team"]
+            gast_team = api_data["gast_team"]
+
+            return {
+                "team": teamname,
+                "heim_team": heim_team,
+                "gast_team": gast_team,
+                "spieler": api_data["spieler"],
+                "formation": api_data["formation"],
+                "resultat": f'{api_data["own_goals"]}:{api_data["opp_goals"]}',
+                "ausgang": api_data["ausgang"],
+                "letzter_gegner": (
+                    gast_team if api_data["is_home"] else heim_team
+                ),
+                "absenzen": {},
+                "is_home": api_data["is_home"],
+            }
+
     except Exception as e:
         print(f"API-Fehler (nutze Web-Scraping): {e}")
 
@@ -490,6 +503,7 @@ def lade_transfermarkt(url, teamname):
                 "--disable-blink-features=AutomationControlled",
             ],
         )
+
         try:
             context = browser.new_context(
                 user_agent=(
@@ -499,22 +513,30 @@ def lade_transfermarkt(url, teamname):
                 ),
                 viewport={"width": 1920, "height": 1080},
             )
+
             page = context.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 pass
+
             soup = BeautifulSoup(page.content(), "html.parser")
             context.close()
+
         finally:
             browser.close()
 
     heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
     score_tore = _extract_score(soup)
-    eigene_tore, fremde_tore = (
-        score_tore if is_heim else (score_tore[1], score_tore[0])
-    )
+
+    if is_heim:
+        eigene_tore, fremde_tore = score_tore
+        gegner = gast_team
+    else:
+        eigene_tore, fremde_tore = score_tore[1], score_tore[0]
+        gegner = heim_team
 
     if eigene_tore > fremde_tore:
         ausgang = "Sieg"
@@ -526,7 +548,16 @@ def lade_transfermarkt(url, teamname):
     formation = _extract_formation(soup)
     spieler = _extract_players(soup, is_heim, teamname)
 
-    return (
-        heim_team, gast_team, eigene_tore, fremde_tore,
-        ausgang, formation, spieler, is_heim
-    )
+    return {
+        "team": teamname,
+        "heim_team": heim_team,
+        "gast_team": gast_team,
+        "spieler": spieler,
+        "formation": formation,
+        "resultat": f"{eigene_tore}:{fremde_tore}",
+        "ausgang": ausgang,
+        "letzter_gegner": gegner,
+        "absenzen": {},
+        "is_home": is_heim,
+    }
+
