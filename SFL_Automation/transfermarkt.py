@@ -263,99 +263,127 @@ def _tm_open_page(url):
                 page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 pass
-            return page.content()
+            html = page.content()
+            title = page.title() or ""
+            low = html.lower()
+            markers = [m for m in ("challenge", "captcha", "awswaf", "access denied", "forbidden", "verify you are human", "bot") if m in low]
+            print(f"[TRANSFERMARKT-DIAG] requested={url}")
+            print(f"[TRANSFERMARKT-DIAG] final={page.url} title={title!r} html_len={len(html)} markers={markers}")
+            return html
         finally:
             browser.close()
 
 
 def _tm_report_url_from_club_page(soup, teamname):
-    """Find the latest completed match report on a Transfermarkt club/schedule page."""
+    """Find the latest completed match report and its basic match data on a club/schedule page."""
     candidates = []
 
-    for row in soup.select("tr"):
-        report = row.select_one('a[href*="/spielbericht/"]')
-        if not report:
-            continue
-
-        href = report.get("href", "").strip()
-        if not href:
-            continue
+    def normalise_href(href):
+        href = (href or "").strip()
         if href.startswith("/"):
             href = "https://www.transfermarkt.ch" + href
+        return href
 
+    def parse_date(text):
+        m = re.search(r"\b(\d{2}\.\d{2}\.\d{4})\b", text or "")
+        if not m:
+            m = re.search(r"\b(\d{2}\.\d{2}\.\d{2})\b", text or "")
+        if not m:
+            return datetime.min
+        raw = m.group(1)
+        fmt = "%d.%m.%Y" if len(raw.rsplit(".", 1)[1]) == 4 else "%d.%m.%y"
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            return datetime.min
+
+    def make_candidate(row, report):
+        href = normalise_href(report.get("href"))
+        if not href or "/spielbericht/" not in href:
+            return None
         text = row.get_text(" ", strip=True)
-        if not text:
-            continue
+        score = re.search(r"\b(\d+)\s*:\s*(\d+)\b", text)
+        if not score:
+            return None
 
-        # Only use rows that look like completed matches.
-        if not re.search(r"\b\d+\s*:\s*\d+\b", text):
-            continue
+        teams = []
+        for a in row.select('a[href*="/startseite/verein/"]'):
+            t = a.get_text(" ", strip=True)
+            if t and t not in teams:
+                teams.append(t)
+        # Also accept the common Spielplan table markup where team links use
+        # /verein/ directly instead of /startseite/verein/.
+        if len(teams) < 2:
+            for a in row.select('a[href*="/verein/"]'):
+                t = a.get_text(" ", strip=True)
+                if t and t not in teams and not re.fullmatch(r"\d+", t):
+                    teams.append(t)
 
-        # Prefer the date in the row. Transfermarkt normally exposes DD.MM.YYYY.
-        date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{4})\b", text)
-        if not date_match:
-            date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{2})\b", text)
+        if teams and not any(_team_match(teamname, t) for t in teams):
+            return None
 
-        if date_match:
-            raw_date = date_match.group(1)
-            fmt = "%d.%m.%Y" if len(raw_date.split(".")[-1]) == 4 else "%d.%m.%y"
-            try:
-                match_date = datetime.strptime(raw_date, fmt)
-            except ValueError:
-                match_date = datetime.min
-        else:
-            match_date = datetime.min
+        home_team = teams[0] if len(teams) >= 2 else ""
+        away_team = teams[1] if len(teams) >= 2 else ""
+        return {
+            "date": parse_date(text),
+            "url": href,
+            "home_team": home_team,
+            "away_team": away_team,
+            "home_goals": int(score.group(1)),
+            "away_goals": int(score.group(2)),
+        }
 
-        # Reject an unrelated match row if the target team is explicitly named
-        # and neither side of the row contains it.
-        team_links = [a.get_text(" ", strip=True) for a in row.select('a[href*="/startseite/verein/"]') if a.get_text(" ", strip=True)]
-        if team_links and not any(_team_match(teamname, t) for t in team_links):
-            continue
-
-        candidates.append((match_date, href))
-
-    if candidates:
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        return candidates[0][1]
-
-    # Fallback: inspect report links on the page and use the first one that is
-    # accompanied by a completed score and target-team text.
-    fallback = []
-    for report in soup.select('a[href*="/spielbericht/"]'):
-        href = report.get("href", "").strip()
-        if not href:
-            continue
-        if href.startswith("/"):
-            href = "https://www.transfermarkt.ch" + href
-        parent = report
-        for _ in range(4):
-            parent = parent.parent if parent else None
-            if not parent:
+    for row in soup.select("tr"):
+        reports = row.select('a[href*="/spielbericht/"]')
+        for report in reports:
+            c = make_candidate(row, report)
+            if c:
+                candidates.append(c)
                 break
-            text = parent.get_text(" ", strip=True)
-            if re.search(r"\b\d+\s*:\s*\d+\b", text) and _team_match(teamname, text):
-                fallback.append(href)
-                break
-    return fallback[0] if fallback else None
+
+    # Some Transfermarkt layouts put the match link outside the <tr>. Walk up
+    # from every report link and inspect the nearest useful container.
+    if not candidates:
+        for report in soup.select('a[href*="/spielbericht/"]'):
+            parent = report
+            for _ in range(6):
+                parent = parent.parent if parent else None
+                if not parent:
+                    break
+                c = make_candidate(parent, report)
+                if c:
+                    candidates.append(c)
+                    break
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x["date"], reverse=True)
+    return candidates[0]
 
 
 def _tm_load_match_from_source(url, teamname):
-    """Open either a match report or a club/schedule source and return report HTML."""
+    """Open a match report or club/schedule source and return report HTML plus source metadata."""
     html = _tm_open_page(url)
     soup = BeautifulSoup(html, "html.parser")
 
-    # Direct match-report URL: use it unchanged.
     if re.search(r"/spielbericht/", url or ""):
-        return soup, url
+        return soup, url, {}
 
-    report_url = _tm_report_url_from_club_page(soup, teamname)
-    if not report_url:
+    candidate = _tm_report_url_from_club_page(soup, teamname)
+    if not candidate:
         raise ValueError(
             f"Transfermarkt: Auf der Vereins-/Spielplanseite konnte kein bereits gespieltes Match von '{teamname}' mit Spielbericht gefunden werden."
         )
 
-    report_html = _tm_open_page(report_url)
-    return BeautifulSoup(report_html, "html.parser"), report_url
+    report_html = _tm_open_page(candidate["url"])
+    metadata = {
+        "heim_team": candidate.get("home_team", ""),
+        "gast_team": candidate.get("away_team", ""),
+        "heim_tore": candidate.get("home_goals"),
+        "gast_tore": candidate.get("away_goals"),
+    }
+    return BeautifulSoup(report_html, "html.parser"), candidate["url"], metadata
 
 
 # ---------------------------------------------------------
@@ -594,10 +622,28 @@ def lade_transfermarkt(url, teamname):
         except Exception:
             pass
 
-    soup, report_url = _tm_load_match_from_source(url, teamname)
+    soup, report_url, source_meta = _tm_load_match_from_source(url, teamname)
 
-    heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
-    score_tore = _extract_score(soup)
+    try:
+        heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
+    except ValueError:
+        heim_team = source_meta.get("heim_team", "")
+        gast_team = source_meta.get("gast_team", "")
+        if not heim_team or not gast_team:
+            raise
+        if _team_match(teamname, heim_team):
+            is_heim = True
+        elif _team_match(teamname, gast_team):
+            is_heim = False
+        else:
+            raise
+
+    try:
+        score_tore = _extract_score(soup)
+    except ValueError:
+        if source_meta.get("heim_tore") is None or source_meta.get("gast_tore") is None:
+            raise
+        score_tore = (int(source_meta["heim_tore"]), int(source_meta["gast_tore"]))
     eigene_tore, fremde_tore = score_tore if is_heim else (score_tore[1], score_tore[0])
 
     if eigene_tore > fremde_tore:
