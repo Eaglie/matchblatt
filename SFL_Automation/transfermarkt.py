@@ -4,6 +4,7 @@ import re
 import unicodedata
 from datetime import datetime
 import requests
+from urllib.parse import quote
 
 
 def _normalize_team(name):
@@ -1240,6 +1241,80 @@ def _lade_transfermarkt_api(url, teamname):
     return result
 
 
+def _resolve_team_schedule_url(teamname, season=""):
+    """Findet die Transfermarkt-Spielplanseite für das erwartete Team.
+
+    Wird verwendet, wenn die vom Benutzer/SFL gelieferte URL zu einem
+    anderen Verein gehört. Zuerst bekannte Schweizer Vereins-IDs, danach
+    die Transfermarkt-Schnellsuche.
+    """
+    normalized = _normalize_team(teamname)
+
+    known = {
+        "grasshopperclubzurich": ("grasshopper-club-zurich", "504"),
+        "grasshoppers": ("grasshopper-club-zurich", "504"),
+        "grasshopper": ("grasshopper-club-zurich", "504"),
+        "fcvaduz": ("fc-vaduz", "163"),
+        "fcstgallen": ("fc-st-gallen-1879", "257"),
+        "fcstgallen1879": ("fc-st-gallen-1879", "257"),
+        "stgallen": ("fc-st-gallen-1879", "257"),
+        "fczurich": ("fc-zurich", "260"),
+        "fczurich": ("fc-zuerich", "260"),
+        "fcbasel": ("fc-basel-1893", "26"),
+        "fcyoungboys": ("bsc-young-boys", "452"),
+        "bscyoungboys": ("bsc-young-boys", "452"),
+        "youngboys": ("bsc-young-boys", "452"),
+    }
+
+    if normalized in known:
+        slug, verein_id = known[normalized]
+        if season:
+            return (
+                f"https://www.transfermarkt.ch/{slug}/spielplan/verein/"
+                f"{verein_id}/saison_id/{season}/plus/1"
+            )
+        return f"https://www.transfermarkt.ch/{slug}/spielplan/verein/{verein_id}/plus/1"
+
+    # Letzter Fallback: Transfermarkt-Schnellsuche.
+    try:
+        search_url = (
+            "https://www.transfermarkt.ch/schnellsuche/ergebnis/"
+            f"schnellsuche?query={quote(teamname)}"
+        )
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
+            try:
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1200},
+                    user_agent=(
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                )
+                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(1500)
+                search_soup = BeautifulSoup(page.content(), "html.parser")
+            finally:
+                browser.close()
+
+        link = _matching_team_link(search_soup, teamname)
+        if link:
+            return _team_schedule_url_from_link(link, season)
+    except Exception:
+        pass
+
+    return ""
+
+
 def _lade_transfermarkt_web(url, teamname):
     """
     Robuster Fallback über die gerenderte Transfermarkt-Seite.
@@ -1310,10 +1385,56 @@ def _lade_transfermarkt_web(url, teamname):
     # geladene Seite einen eindeutigen Vereinslink für das erwartete Team
     # enthält, verwenden wir diesen Verein statt der falschen URL.
     matching_link = _matching_team_link(soup, teamname)
+
+    # WICHTIG: Wenn die eingegebene URL zu einem anderen Verein gehört,
+    # nicht weiter auf dieser falschen Seite suchen. Direkt den Spielplan
+    # des von SFL erwarteten Teams öffnen.
     current_id_match = re.search(r"/verein/(\d+)", url or "")
     current_id = current_id_match.group(1) if current_id_match else ""
     matching_id_match = re.search(r"/startseite/verein/(\d+)", matching_link or "")
     matching_id = matching_id_match.group(1) if matching_id_match else ""
+
+    if not matching_id and current_id:
+        # Die aktuelle Seite kann selbst keine Vereinsverlinkung zum
+        # erwarteten Team enthalten (z.B. Vaduz-URL, erwartet wird GC).
+        # Deshalb bekannte/erfolgreich aufgelöste Team-URL verwenden.
+        season_match = re.search(r"saison_id/(\d{4})", url or "")
+        season = season_match.group(1) if season_match else str(datetime.now().year)
+        resolved_url = _resolve_team_schedule_url(teamname, season)
+        if resolved_url:
+            matching_id_match = re.search(r"/verein/(\d+)", resolved_url)
+            resolved_id = matching_id_match.group(1) if matching_id_match else ""
+            if resolved_id and resolved_id != current_id:
+                corrected_url = resolved_url
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                        ],
+                    )
+                    try:
+                        page = browser.new_page(
+                            viewport={"width": 1440, "height": 1200},
+                            user_agent=(
+                                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/131.0.0.0 Safari/537.36"
+                            ),
+                        )
+                        page.goto(corrected_url, wait_until="domcontentloaded", timeout=60000)
+                        try:
+                            page.wait_for_selector("div.formation-player-container", timeout=15000)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(2000)
+                        soup = BeautifulSoup(page.content(), "html.parser")
+                        url = corrected_url
+                    finally:
+                        browser.close()
 
     if matching_link and matching_id and matching_id != current_id:
         season_match = re.search(r"saison_id/(\d{4})", url or "")
