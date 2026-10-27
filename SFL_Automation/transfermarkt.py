@@ -1,1061 +1,304 @@
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
-import re
-import unicodedata
-from datetime import datetime
+from pathlib import Path
+import html
+
+CSS = r'''<style>
+*{box-sizing:border-box;}
+body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;}
+.page{width:210mm;min-height:297mm;margin:10mm auto;background:white;padding:10mm 15mm;box-shadow:0 0 15px rgba(0,0,0,.15);}
+.header{background:#0b2f6b;color:white;display:flex;justify-content:center;align-items:center;padding:5px 20px;border:1px solid #0b2f6b;border-radius:10px 10px 0 0;overflow:hidden;}
+.title{text-align:center;}
+.title h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.5px;color:#fff;text-transform:uppercase;}
+.title h2{margin:8px 0 0;font-size:13px;font-weight:400;color:rgba(255,255,255,.78);}
+.header_label{color:#fff;font-weight:600;}
+.header_value{color:#fff;text-transform:uppercase;}
+.info{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:13px;}
+.info td{border:1px solid #d7d7d7;padding:8px 12px;}
+.info td:first-child{width:200px;background:#f3f3f3;font-weight:bold;}
+.absence{width:100%;border-collapse:collapse;margin:0;font-size:15px;}
+.absence td{border:1px solid #d9dee5;padding:6px 10px;height:30px;font-size:11px;font-weight:700;line-height:1.25;color:#111;vertical-align:top;}
+.absence td:first-child{width:105px;background:#fafbfc;color:#555;font-size:13px;font-weight:600;}
+.team{margin-top:12px;border:1px solid #dfe5ec;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.team_head{display:flex;align-items:center;width:100%;background:#17233f;border-radius:10px 10px 0 0;overflow:hidden;margin-bottom:0;white-space:nowrap;font-family:Arial,Helvetica,sans-serif;}
+.team_name{flex:1;background:#17233f;color:#fff;padding:10px 16px;font-size:18px;font-weight:700;text-align:left;}
+.team_opponent{background:#17233f;color:rgba(255,255,255,.85);padding:10px 16px;font-size:16px;font-weight:400;text-align:right;margin-left:auto;}
+.team_body{display:grid;grid-template-columns:380px 1fr;gap:28px;padding:6px 18px 4px 18px;align-items:start;}
+.pitch{position:relative;width:380px;height:380px;border:1px solid #d7dfe8;border-radius:8px;background:#fff;overflow:hidden;transform:translate(20px,10px);}
+.midline{position:absolute;left:0;right:0;top:50%;border-top:2px solid rgba(255,255,255,.85);}
+.centerdot{position:absolute;width:6px;height:6px;background:#fff;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
+.centercircle{position:absolute;width:74px;height:74px;border:1.5px solid #444;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
+.penalty_top{position:absolute;left:20%;width:60%;height:44px;top:0;border:1.5px solid #444;border-top:none;}
+.penalty_bottom{position:absolute;left:20%;width:60%;height:44px;bottom:0;border:1.5px solid #444;border-bottom:none;}
+.goalbox_top{position:absolute;left:35%;width:30%;height:16px;top:0;border:1.5px solid #444;border-top:none;}
+.goalbox_bottom{position:absolute;left:35%;width:30%;height:16px;bottom:0;border:1.5px solid #444;border-bottom:none;}
+.penalty_dot_top{position:absolute;width:3px;height:3px;background:#222;border-radius:50%;left:50%;top:32px;transform:translateX(-50%);}
+.penalty_dot_bottom{position:absolute;width:3px;height:3px;background:#222;border-radius:50%;left:50%;bottom:32px;transform:translateX(-50%);}
+.corner_top_left{position:absolute;top:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
+.corner_top_right{position:absolute;top:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
+.corner_bottom_left{position:absolute;bottom:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
+.corner_bottom_right{position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
+.player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;}
+.player_circle{
+    width:36px;
+    height:36px;
+    margin:auto;
+    border-radius:50%;
+    background:#111;
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+    font-weight:bold;
+    border:2px solid white;
+    box-shadow:0 3px 8px rgba(0,0,0,.25);
+}
+.player_name{margin-top:2px;padding:0;font-size:11px;font-weight:700;line-height:1.1;color:#111;text-align:center;white-space:nowrap;}
+.player_position{display:none;}
+html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+</style>'''
 
 
-def _normalize_team(name):
-    if not name:
-        return ""
-
-    name = unicodedata.normalize(
-        "NFKD",
-        name
-    ).encode(
-        "ascii",
-        "ignore"
-    ).decode(
-        "ascii"
-    )
-
-    name = name.lower()
-
-    name = re.sub(
-        r"[^a-z0-9]",
-        "",
-        name
-    )
-
-    # Jahreszahl am Ende entfernen:
-    # FC Basel 1893 -> FC Basel
-    name = re.sub(
-        r"(18|19|20)\d{2}$",
-        "",
-        name
-    )
-
-    return name
+def parse_val(val):
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        cleaned = "".join(c for c in val if c.isdigit() or c in ".-")
+        if cleaned:
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+    return None
 
 
-def _team_match(
-    input_team,
-    page_team
-):
-    """
-    Vergleicht SFL-Teamname mit Transfermarkt-Teamname.
-    """
-
-    a = _normalize_team(
-        input_team
-    )
-
-    b = _normalize_team(
-        page_team
-    )
-
-    if not a or not b:
-        return False
-
-    if a == b:
-        return True
-
-    prefixes = (
-        "fc",
-        "ac",
-        "sc",
-        "bc",
-    )
-
-    aa = a
-    bb = b
-
-    for prefix in prefixes:
-
-        if aa.startswith(prefix):
-            aa = aa[len(prefix):]
-
-        if bb.startswith(prefix):
-            bb = bb[len(prefix):]
-
-    return (
-        bool(aa)
-        and bool(bb)
-        and aa == bb
-    )
+def adjust_left(val):
+    return val
 
 
-def _extract_team_names(
-    soup,
-    teamname
-):
-    """
-    Ermittelt Heim- und Gastteam robust aus einer Transfermarkt-Spielberichtseite.
-    """
+def adjust_top(val):
+    return val
 
-    heim_team = ""
-    gast_team = ""
 
-    # 1. Direkte Transfermarkt-Struktur
-    heim_box = (
-        soup.select_one(".sb-team.sb-heim a.sb-club__link")
-        or soup.select_one(".sb-team.sb-heim a")
-        or soup.select_one(".sb-heim a")
-    )
+def draw_players(spieler):
+    html_parts = []
 
-    gast_box = (
-        soup.select_one(".sb-team.sb-gast a.sb-club__link")
-        or soup.select_one(".sb-team.sb-gast a")
-        or soup.select_one(".sb-gast a")
-    )
-
-    if heim_box:
-        heim_team = heim_box.get_text(
-            " ",
-            strip=True
-        )
-
-    if gast_box:
-        gast_team = gast_box.get_text(
-            " ",
-            strip=True
-        )
-
-    # 2. Hauptüberschrift / Seitentitel
-    titel_quellen = []
-
-    h1 = soup.select_one("h1")
-
-    if h1:
-        titel_quellen.append(
-            h1.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-    if soup.title:
-        titel_quellen.append(
-            soup.title.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-    meta_title = soup.select_one(
-        'meta[property="og:title"]'
-    )
-
-    if (
-        meta_title
-        and meta_title.get("content")
-    ):
-        titel_quellen.append(
-            meta_title["content"].strip()
-        )
-
-    for titel_text in titel_quellen:
-
-        if not titel_text:
+    # DIE GESAMTE MANNSCHAFT wird als eine Einheit verschoben:
+    # Torhüter + 10 Feldspieler. Relative Abstände bleiben exakt gleich.
+    positions = []
+    for i, p in enumerate(spieler or []):
+        if not isinstance(p, dict):
             continue
-
-        match_paar = titel_text.split(
-            ",",
-            1
-        )[0].strip()
-
-        if " - " not in match_paar:
+        try:
+            x = float(p.get("left", p.get("x", 50)))
+            y = float(p.get("top", p.get("y", 50)))
+        except (TypeError, ValueError):
             continue
+        positions.append((i, x, y))
 
-        t1, t2 = [
-            x.strip()
-            for x in match_paar.split(
-                " - ",
-                1
-            )
-        ]
+    if positions:
+        team_center_x = sum(x for _, x, _ in positions) / len(positions)
+        team_center_y = sum(y for _, _, y in positions) / len(positions)
 
-        if (
-            t1
-            and t2
-            and _team_match(
-                teamname,
-                t1
-            )
-        ):
-            heim_team = t1
-            gast_team = t2
-            break
-
-        if (
-            t1
-            and t2
-            and _team_match(
-                teamname,
-                t2
-            )
-        ):
-            heim_team = t1
-            gast_team = t2
-            break
-
-    # 3. Breiter Fallback über sichtbare Überschriften
-    kandidaten = []
-
-    if not heim_team or not gast_team:
-
-        for element in soup.select(
-            "h1, h2, h3, h4, "
-            ".sb-team, "
-            "[class*='team'], "
-            "[class*='club']"
-        ):
-
-            text = element.get_text(
-                " ",
-                strip=True
-            )
-
-            if not text:
-                continue
-
-            kandidaten.append(text)
-
-            if " - " not in text:
-                continue
-
-            paar = text.split(
-                ",",
-                1
-            )[0].strip()
-
-            if " - " not in paar:
-                continue
-
-            t1, t2 = [
-                x.strip()
-                for x in paar.split(
-                    " - ",
-                    1
-                )
-            ]
-
-            if (
-                t1
-                and t2
-                and _team_match(
-                    teamname,
-                    t1
-                )
-            ):
-                heim_team = t1
-                gast_team = t2
-                break
-
-            if (
-                t1
-                and t2
-                and _team_match(
-                    teamname,
-                    t2
-                )
-            ):
-                heim_team = t1
-                gast_team = t2
-                break
-
-    # 4. Letzter Rohtext-Fallback
-    if not heim_team or not gast_team:
-
-        for text in kandidaten:
-
-            match = re.search(
-                r"([A-Za-zÀ-ÿ0-9.'’&()\- ]+?)"
-                r"\s+-\s+"
-                r"([A-Za-zÀ-ÿ0-9.'’&()\- ]+)",
-                text
-            )
-
-            if not match:
-                continue
-
-            t1 = match.group(1).strip()
-            t2 = match.group(2).strip()
-
-            if _team_match(
-                teamname,
-                t1
-            ):
-                heim_team = t1
-                gast_team = t2
-                break
-
-            if _team_match(
-                teamname,
-                t2
-            ):
-                heim_team = t1
-                gast_team = t2
-                break
-
-    if not heim_team or not gast_team:
-        raise ValueError(
-            "Transfermarkt: Heim- und Gastteam "
-            "konnten nicht eindeutig gefunden werden."
-        )
-
-    if _team_match(
-        heim_team,
-        gast_team
-    ):
-        raise ValueError(
-            "Transfermarkt: Heimteam und Gastteam "
-            "sind identisch."
-        )
-
-    heim_match = _team_match(
-        teamname,
-        heim_team
-    )
-
-    gast_match = _team_match(
-        teamname,
-        gast_team
-    )
-
-    if heim_match and gast_match:
-        raise ValueError(
-            f"Transfermarkt: '{teamname}' passt "
-            "gleichzeitig auf Heim- und Gastteam."
-        )
-
-    if not heim_match and not gast_match:
-        raise ValueError(
-            f"Transfermarkt: '{teamname}' wurde "
-            "nicht eindeutig gefunden.\n"
-            f"Heim: {heim_team}\n"
-            f"Gast: {gast_team}"
-        )
-
-    return (
-        heim_team,
-        gast_team,
-        heim_match
-    )
-
-
-def _extract_score(
-    soup
-):
-    """
-    Holt das Endresultat.
-    """
-
-    raw_resultat = ""
-
-    score_box = soup.select_one(
-        ".sb-core-info"
-    )
-
-    if score_box:
-
-        for txt in score_box.stripped_strings:
-
-            if re.fullmatch(
-                r"\d+:\d+",
-                txt
-            ):
-
-                a, b = map(
-                    int,
-                    txt.split(":")
-                )
-
-                if (
-                    a <= 20
-                    and b <= 20
-                ):
-
-                    raw_resultat = txt
-                    break
-
-    if not raw_resultat:
-
-        for txt in soup.stripped_strings:
-
-            if re.fullmatch(
-                r"\d+:\d+",
-                txt
-            ):
-
-                a, b = map(
-                    int,
-                    txt.split(":")
-                )
-
-                if (
-                    a <= 10
-                    and b <= 10
-                ):
-
-                    raw_resultat = txt
-                    break
-
-    if not raw_resultat:
-        raise ValueError(
-            "Transfermarkt: Endresultat "
-            "konnte nicht eindeutig gefunden werden."
-        )
-
-    return tuple(
-        map(
-            int,
-            raw_resultat.split(":")
-        )
-    )
-
-
-def _extract_formation(
-    soup
-):
-
-    text = soup.get_text(
-        "\n"
-    )
-
-    match = re.search(
-        r"Startaufstellung:\s*([0-9\- ]+)",
-        text
-    )
-
-    if match:
-
-        return match.group(
-            1
-        ).strip()
-
-    return ""
-
-
-def _extract_players(
-    soup,
-    is_heim,
-    teamname
-):
-    """
-    Holt ausschließlich die Startelf des
-    tatsächlich gewünschten Teams.
-    """
-
-    if is_heim:
-
-        containers = soup.select(
-            "div.sb-aufstellung-heim "
-            "div.formation-player-container"
-        )
-
+        # Ein gemeinsamer Offset für ALLE Spieler.
+        offset_x = 50.0 - team_center_x
+        offset_y = 50.0 - team_center_y
     else:
+        offset_x = 0.0
+        offset_y = 0.0
 
-        containers = soup.select(
-            "div.sb-aufstellung-gast "
-            "div.formation-player-container"
-        )
+    valid_indices = {i for i, _, _ in positions}
 
-    # Falls die Teamcontainer nicht vorhanden sind:
-    # komplette Liste nehmen und anhand der
-    # Transfermarkt-Reihenfolge trennen.
-    if not containers:
+    for i, p in enumerate(spieler or []):
+        if not isinstance(p, dict):
+            continue
 
-        alle = soup.select(
-            "div.formation-player-container"
-        )
+        nummer = p.get("nummer", p.get("number", ""))
+        name = p.get("name", p.get("spieler", ""))
+        left = p.get("left", p.get("x", 50))
+        top = p.get("top", p.get("y", 50))
 
-        if len(alle) >= 22:
+        if i in valid_indices:
+            left = float(left) + offset_x
+            top = float(top) + offset_y
 
-            if is_heim:
-                containers = alle[:11]
+        html_parts.append(f"""
+<div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
+    <div class="player_circle">{html.escape(str(nummer))}</div>
+    <div class="player_name">{html.escape(str(name))}</div>
+    <div class="player_position"></div>
+</div>""")
 
-            else:
-                containers = alle[11:22]
+    return "".join(html_parts)
 
-        else:
 
-            raise ValueError(
-                "Transfermarkt: Die Startaufstellung "
-                f"von '{teamname}' konnte nicht "
-                "eindeutig gefunden werden."
-            )
+def draw_pitch(spieler):
+    return f'''
+<div class="pitch">
+    <div class="midline"></div>
+    <div class="centerdot"></div>
+    <div class="centercircle"></div>
+    <div class="penalty_top"></div>
+    <div class="goalbox_top"></div>
+    <div class="penalty_bottom"></div>
+    <div class="goalbox_bottom"></div>
+    <div class="penalty_dot_top"></div>
+    <div class="penalty_dot_bottom"></div>
+    {draw_players(spieler)}
+</div>'''
 
+
+def absence_table_html(absences):
+    absences = absences or {}
+
+    def values(*keys):
+        found = []
+        for key in keys:
+            value = absences.get(key, [])
+            if isinstance(value, str):
+                if value.strip():
+                    found.append(value.strip())
+            elif isinstance(value, (list, tuple)):
+                found.extend(str(x) for x in value if str(x).strip())
+        return "<br>".join(html.escape(x) for x in found)
+
+    return f'''
+<table class="absence">
+<tr><td>Gesperrt</td><td>{values("gesperrt")}</td></tr>
+<tr><td>Verletzt</td><td>{values("verletzt")}</td></tr>
+<tr><td>Krank</td><td>{values("krank")}</td></tr>
+<tr><td>Fraglich</td><td>{values("fraglich")}</td></tr>
+<tr><td>Nicht im Aufgebot</td><td>{values("nicht_im_aufgebot", "nicht_im_kader", "nicht_im_aufgebot_namen")}</td></tr>
+</table>'''
+
+
+def team_block(teamname, daten, absenzen):
+    daten = daten or {}
+    raw_spieler = daten.get("spieler", [])
     spieler = []
 
-    for div in containers:
-
-        style = div.get(
-            "style",
-            ""
-        )
-
-        top = re.search(
-            r"top:\s*([\d.]+)%",
-            style
-        )
-
-        left = re.search(
-            r"left:\s*([\d.]+)%",
-            style
-        )
-
-        nummer = div.select_one(
-            ".tm-shirt-number"
-        )
-
-        name = div.select_one(
-            ".formation-number-name"
-        )
-
-        if (
-            not top
-            or not left
-            or not nummer
-            or not name
-        ):
+    for s in raw_spieler:
+        if not isinstance(s, dict):
             continue
-
-        spieler.append(
-            {
-                "nummer": nummer.get_text(
-                    strip=True
-                ),
-                "name": name.get_text(
-                    " ",
-                    strip=True
-                ),
-                "x": float(
-                    left.group(1)
-                ),
-                "y": float(
-                    top.group(1)
-                ),
-            }
-        )
-
-    # Doppelte Spieler entfernen
-    eindeutig = []
-
-    gesehen = set()
-
-    for s in spieler:
-
-        key = (
-            s["name"],
-            s["x"],
-            s["y"]
-        )
-
-        if key in gesehen:
-            continue
-
-        gesehen.add(
-            key
-        )
-
-        eindeutig.append(
-            s
-        )
-
-    spieler = eindeutig
-
-    if len(spieler) != 11:
-
-        raise ValueError(
-            "Transfermarkt: Für "
-            f"'{teamname}' wurden nicht exakt "
-            f"11 Startspieler gefunden "
-            f"(gefunden: {len(spieler)})."
-        )
-
-    return spieler
-
-
-
-def _extract_last_match_from_schedule(
-    soup,
-    teamname,
-    current_url
-):
-    """
-    Holt das letzte bereits gespielte Spiel des Teams aus dem
-    Transfermarkt-Spielplan. Das aktuell eingegebene Spiel wird
-    anhand seiner Spiel-ID ausgeschlossen.
-
-    Wichtig: Das Resultat wird aus der Ergebnis-Spalte gelesen,
-    niemals aus dem gesamten Zeilentext, weil dort auch die Uhrzeit
-    im Format 16:30 steht.
-    """
-
-    current_match = re.search(
-        r"spielbericht/(\d+)",
-        current_url or ""
-    )
-    current_match_id = (
-        current_match.group(1)
-        if current_match
-        else ""
-    )
-
-    team_link = None
-
-    for a in soup.select("a[href]"):
-        href = a.get("href", "")
-        text = a.get_text(" ", strip=True)
-
-        if "/startseite/verein/" not in href:
-            continue
-
-        if _team_match(teamname, text):
-            team_link = href
-            break
-
-    if not team_link:
-        return None
-
-    id_match = re.search(
-        r"/startseite/verein/(\d+)",
-        team_link
-    )
-    if not id_match:
-        return None
-
-    verein_id = id_match.group(1)
-
-    slug_match = re.search(
-        r"/([^/]+)/startseite/verein/",
-        team_link
-    )
-    if not slug_match:
-        return None
-
-    slug = slug_match.group(1)
-
-    season_match = re.search(
-        r"saison_id/(\d{4})",
-        team_link
-    )
-    saison = (
-        season_match.group(1)
-        if season_match
-        else str(datetime.now().year)
-    )
-
-    schedule_url = (
-        "https://www.transfermarkt.de/"
-        f"{slug}/spielplan/verein/{verein_id}/"
-        f"saison_id/{saison}"
-    )
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            try:
-                page = browser.new_page()
-                page.goto(
-                    schedule_url,
-                    wait_until="domcontentloaded",
-                    timeout=30000
-                )
-                try:
-                    page.wait_for_load_state(
-                        "networkidle",
-                        timeout=10000
-                    )
-                except Exception:
-                    pass
-                schedule_soup = BeautifulSoup(
-                    page.content(),
-                    "html.parser"
-                )
-            finally:
-                browser.close()
-    except Exception:
-        return None
-
-    kandidaten = []
-
-    for row in schedule_soup.select("tr"):
-        row_text = row.get_text(" ", strip=True)
-        if not row_text:
-            continue
-
-        # Aktuelles Spiel niemals als "letztes Spiel" verwenden.
-        if current_match_id:
-            row_ids = re.findall(
-                r"spielbericht/(\d+)",
-                " ".join(
-                    a.get("href", "")
-                    for a in row.select("a[href]")
-                )
-            )
-            if current_match_id in row_ids:
-                continue
-
-        date_match = re.search(
-            r"(\d{2}\.\d{2}\.\d{2,4})",
-            row_text
-        )
-        if not date_match:
-            continue
-
-        date_text = date_match.group(1)
-        date_format = (
-            "%d.%m.%Y"
-            if len(date_text.rsplit(".", 1)[1]) == 4
-            else "%d.%m.%y"
-        )
-
-        try:
-            match_date = datetime.strptime(
-                date_text,
-                date_format
-            )
-        except ValueError:
-            continue
-
-        # Vereinslinks liefern die beiden Teams zuverlässig.
-        team_links = []
-        for a in row.select("a[href]"):
-            href = a.get("href", "")
-            text = a.get_text(" ", strip=True)
-            if "/startseite/verein/" in href and text:
-                if text not in team_links:
-                    team_links.append(text)
-
-        if len(team_links) < 2:
-            continue
-
-        own_index = None
-        for i, text in enumerate(team_links):
-            if _team_match(teamname, text):
-                own_index = i
-                break
-
-        if own_index is None:
-            continue
-
-        opponent = ""
-        for i, text in enumerate(team_links):
-            if i != own_index and not _team_match(teamname, text):
-                opponent = text
-                break
-
-        if not opponent:
-            continue
-
-        # RESULTAT NUR AUS DER ERGEBNIS-ZELLE DES SPIELBERICHTS.
-        # Uhrzeiten wie 16:30 werden nicht als Resultat verwendet.
-
-        score_text = ""
-
-        for cell in row.select("td"):
-
-            if not cell.select_one('a[href*="/spielbericht/"]'):
-                continue
-
-            matches = re.findall(
-                r"(?<!\d)(\d{1,2})\s*:\s*(\d{1,2})(?!\d)",
-                cell.get_text(" ", strip=True)
-            )
-
-            for a, b in matches:
-
-                a = int(a)
-                b = int(b)
-
-                # Keine Uhrzeit wie 16:30
-                if b >= 60:
-                    continue
-
-                # Plausibler Fussball-Spielstand
-                if a <= 20 and b <= 20:
-                    score_text = f"{a}:{b}"
-
-            if score_text:
-                break
-
-        if not score_text:
-            continue
-
-        # Ort-Spalte: H = eigenes Team zuhause, A = auswärts.
-        ha = None
-        for cell in cells:
-            cell_text = cell.get_text(" ", strip=True)
-            if cell_text in ("H", "A"):
-                ha = cell_text
-                break
-
-        if ha not in ("H", "A"):
-            continue
-
-        if ha == "H":
-            eigenes = f"{a}:{b}"
-            eigene_tore, fremde_tore = a, b
-        else:
-            eigenes = f"{b}:{a}"
-            eigene_tore, fremde_tore = b, a
-
-        if eigene_tore > fremde_tore:
-            ausgang = "Sieg"
-        elif eigene_tore < fremde_tore:
-            ausgang = "Niederlage"
-        else:
-            ausgang = "Unentschieden"
-
-        kandidaten.append({
-            "datum": match_date,
-            "resultat": eigenes,
-            "gegner": opponent,
-            "ausgang": ausgang,
-        })
-
-    if not kandidaten:
-        return None
-
-    kandidaten.sort(
-        key=lambda x: x["datum"],
-        reverse=True
-    )
-
-    return kandidaten[0]
-
-def lade_transfermarkt(
-    url,
-    teamname=""
-):
-
-    if not url:
-
-        raise ValueError(
-            "Transfermarkt-URL fehlt."
-        )
-
-    if not teamname:
-
-        raise ValueError(
-            "Teamname fehlt."
-        )
-
-    with sync_playwright() as p:
-
-        browser = p.chromium.launch(
-            headless=True
-        )
-
-        try:
-
-            page = browser.new_page()
-
-            try:
-
-                page.goto(
-                    url,
-                    wait_until="commit",
-                    timeout=30000
-                )
-
-            except Exception:
-                pass
-
-            try:
-                page.wait_for_selector(
-                    "div.formation-player-container",
-                    timeout=8000
-                )
-            except Exception:
-                pass
-
-            html = page.content()
-
-        finally:
-
-            browser.close()
-
-    if not html:
-        if navigation_error is not None:
-            raise ValueError(
-                "Transfermarkt-Seite konnte nicht geladen werden: "
-                f"{navigation_error}"
-            ) from navigation_error
-
-        raise ValueError(
-            "Transfermarkt-Seite konnte "
-            "nicht geladen werden."
-        )
-
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
-
-    # ---------------------------------------------------------
-    # MANNSCHAFTEN
-    # ---------------------------------------------------------
-
-    (
-        heim_team,
-        gast_team,
-        is_heim
-    ) = _extract_team_names(
-        soup,
-        teamname
-    )
-
-    # ---------------------------------------------------------
-    # GEGNER
-    # ---------------------------------------------------------
-
-    if is_heim:
-
-        gegner = gast_team
-
-    else:
-
-        gegner = heim_team
-
-    if _team_match(
-        teamname,
-        gegner
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Gegner entspricht "
-            "dem eigenen Team."
-        )
-
-    # ---------------------------------------------------------
-    # RESULTAT
-    # ---------------------------------------------------------
-
-    (
-        h_tore,
-        g_tore
-    ) = _extract_score(
-        soup
-    )
-
-    if is_heim:
-
-        eigenes_resultat = (
-            f"{h_tore}:{g_tore}"
-        )
-
-        eigene = h_tore
-        fremde = g_tore
-
-    else:
-
-        eigenes_resultat = (
-            f"{g_tore}:{h_tore}"
-        )
-
-        eigene = g_tore
-        fremde = h_tore
-
-    # ---------------------------------------------------------
-    # AUSGANG
-    # ---------------------------------------------------------
-
-    if eigene > fremde:
-
-        ausgang = "Sieg"
-
-    elif eigene < fremde:
-
-        ausgang = "Niederlage"
-
-    else:
-
-        ausgang = "Unentschieden"
-
-    # ---------------------------------------------------------
-    # FORMATION
-    # ---------------------------------------------------------
-
-    formation = _extract_formation(
-        soup
-    )
-
-    # ---------------------------------------------------------
-    # SPIELER
-    # ---------------------------------------------------------
-
-    spieler = _extract_players(
-        soup,
-        is_heim,
-        teamname
-    )
-
-    # LETZTES SPIEL: Resultat und Gegner aus dem Vereins-Spielplan.
-    letztes_spiel = _extract_last_match_from_schedule(
-        soup,
-        teamname,
-        url
-    )
-
-    if letztes_spiel:
-        eigenes_resultat = letztes_spiel["resultat"]
-        gegner = letztes_spiel["gegner"]
-        ausgang = letztes_spiel["ausgang"]
-
-    # ---------------------------------------------------------
-    # ABSCHLIESSENDE SICHERHEITSPRÜFUNGEN
-    # ---------------------------------------------------------
-
-    erkanntes_team = (
-        heim_team
-        if is_heim
-        else gast_team
-    )
-
-    if not _team_match(
-        teamname,
-        erkanntes_team
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Sicherheitsprüfung "
-            "der Teamzuordnung fehlgeschlagen."
-        )
-
-    if _team_match(
-        erkanntes_team,
-        gegner
-    ):
-
-        raise ValueError(
-            "Transfermarkt: Eigenes Team und "
-            "Gegner sind identisch."
-        )
-
-    if len(spieler) != 11:
-
-        raise ValueError(
-            "Transfermarkt: Es müssen exakt "
-            "11 Startspieler vorhanden sein."
-        )
-
+        spieler.append(s.copy())
+
+    letzter_gegner = daten.get("letzter_gegner", "")
+    resultat = daten.get("resultat", "")
+
+    last_game = f"Letztes Spiel: {teamname} {resultat} {letzter_gegner}".strip()
+
+    return f'''
+<div class="team">
+    <div class="team_head">
+        <span class="team_name">{html.escape(str(teamname))}</span>
+        <span class="team_opponent">{html.escape(last_game)}</span>
+    </div>
+    <div class="team_body">
+        <div style="display:flex; flex-direction:column;">
+            {draw_pitch(spieler)}
+        </div>
+        <div style="display:flex; flex-direction:column;">
+            {absence_table_html(absenzen)}
+        </div>
+    </div>
+</div>'''
+
+
+def erstelle_report(sfl, heim, gast):
+    sfl = sfl or {}
+    heim = heim or {}
+    gast = gast or {}
+
+    heim_name = sfl.get("heim", "")
+    gast_name = sfl.get("gast", "")
+
+    header = f'''
+<div class="header">
+    <div class="title">
+        <h1>{html.escape(str(heim_name)).upper()} – {html.escape(str(gast_name)).upper()}</h1>
+        <h2>
+            {html.escape(str(sfl.get("stadion", "")))}
+            • <span class="header_label">Schiedsrichter:</span>
+            <span class="header_value">{html.escape(str(sfl.get("schiedsrichter", ""))).upper()}</span>
+            • <span class="header_label">VAR:</span>
+            <span class="header_value">{html.escape(str(sfl.get("var", ""))).upper()}</span>
+        </h2>
+    </div>
+</div>'''
+
+    html_document = f'''<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>{html.escape(str(heim_name))} - {html.escape(str(gast_name))}</title>
+{CSS}
+</head>
+<body>
+<div class="page">
+{header}
+
+{team_block(
+    heim_name,
+    heim,
+    sfl.get("heim_abwesend", heim.get("absenzen", {}))
+)}
+
+<div style="height:2px;"></div>
+
+{team_block(
+    gast_name,
+    gast,
+    sfl.get("gast_abwesend", gast.get("absenzen", {}))
+)}
+</div>
+</body>
+</html>'''
+
+    Path("report.html").write_text(html_document, encoding="utf-8")
+    print("✓ report.html erstellt")
+
+
+def report_vorlage():
+    return {
+        "heim": "",
+        "gast": "",
+        "liga": "",
+        "datum": "",
+        "zeit": "",
+        "stadion": "",
+        "schiedsrichter": "",
+        "var": "",
+        "runde": "",
+        "zuschauer": "",
+    }
+
+
+def team_vorlage():
     return {
         "logo": "",
-
-        "team": erkanntes_team,
-
-        "formation": formation,
-
-        "resultat": eigenes_resultat,
-
-        "letzter_gegner": gegner,
-
-        "gegner": gegner,
-
-        "ausgang": ausgang,
-
-        "spieler": spieler,
+        "formation": "",
+        "resultat": "",
+        "letzter_gegner": "",
+        "trainer": "",
+        "captain": "",
+        "tabellenplatz": "",
+        "form": "",
+        "tore": "",
+        "gegentore": "",
+        "xg": "",
+        "ballbesitz": "",
+        "spieler": [],
+        "ersatzbank": [],
+        "absenzen": {
+            "gesperrt": [],
+            "verletzt": [],
+            "krank": [],
+            "fraglich": [],
+            "nicht_im_aufgebot": [],
+        },
     }
+
+
+if __name__ == "__main__":
+    print("Dieses Modul wird von main.py aufgerufen.")
