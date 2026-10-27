@@ -61,6 +61,19 @@ def _team_match(
     if a == b:
         return True
 
+    # Transfermarkt verwendet bei einigen Schweizer Vereinen Kurz-/Spitznamen.
+    aliases = {
+        "grasshopperclubzurich": {"grasshoppers", "grasshopper"},
+        "grasshoppers": {"grasshopperclubzurich", "grasshopper"},
+        "grasshopper": {"grasshopperclubzurich", "grasshoppers"},
+        "fcstgallen": {"fcstgallen1879", "stgallen"},
+        "fcstgallen1879": {"fcstgallen", "stgallen"},
+        "stgallen": {"fcstgallen", "fcstgallen1879"},
+    }
+
+    if b in aliases.get(a, set()) or a in aliases.get(b, set()):
+        return True
+
     prefixes = (
         "fc",
         "ac",
@@ -612,6 +625,12 @@ def _extract_last_match_from_schedule(
 
     team_link = None
 
+    # Bei Vereins-/Spielplanseiten kann der angezeigte Name abweichen
+    # (z.B. "Grasshoppers" statt "Grasshopper Club Zürich"). Wenn die URL
+    # bereits die Vereins-ID enthält, verwenden wir diese direkt.
+    url_id_match = re.search(r"/verein/(\d+)", current_url or "")
+    url_verein_id = url_id_match.group(1) if url_id_match else ""
+
     for a in soup.select("a[href]"):
         href = a.get("href", "")
         text = a.get_text(" ", strip=True)
@@ -623,30 +642,33 @@ def _extract_last_match_from_schedule(
             team_link = href
             break
 
-    if not team_link:
+    if team_link:
+        id_match = re.search(
+            r"/startseite/verein/(\d+)",
+            team_link
+        )
+        verein_id = id_match.group(1) if id_match else url_verein_id
+
+        slug_match = re.search(
+            r"/([^/]+)/startseite/verein/",
+            team_link
+        )
+        slug = slug_match.group(1) if slug_match else ""
+    else:
+        # Fallback direkt aus der eingegebenen Transfermarkt-URL.
+        verein_id = url_verein_id
+        slug_match = re.search(
+            r"https?://[^/]+/([^/]+)/(?:spielplan|spielplandatum|startseite)/",
+            current_url or ""
+        )
+        slug = slug_match.group(1) if slug_match else ""
+
+    if not verein_id:
         return None
-
-    id_match = re.search(
-        r"/startseite/verein/(\d+)",
-        team_link
-    )
-    if not id_match:
-        return None
-
-    verein_id = id_match.group(1)
-
-    slug_match = re.search(
-        r"/([^/]+)/startseite/verein/",
-        team_link
-    )
-    if not slug_match:
-        return None
-
-    slug = slug_match.group(1)
 
     season_match = re.search(
         r"saison_id/(\d{4})",
-        team_link
+        current_url or ""
     )
     saison = (
         season_match.group(1)
@@ -655,9 +677,12 @@ def _extract_last_match_from_schedule(
     )
 
     schedule_url = (
-        "https://www.transfermarkt.de/"
+        "https://www.transfermarkt.ch/"
         f"{slug}/spielplan/verein/{verein_id}/"
-        f"saison_id/{saison}"
+        f"saison_id/{saison}/plus/1"
+    ) if slug else (
+        "https://www.transfermarkt.ch/"
+        f"spielplan/verein/{verein_id}/saison_id/{saison}/plus/1"
     )
 
     try:
