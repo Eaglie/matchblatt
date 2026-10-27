@@ -81,6 +81,7 @@ def _extract_team_names(soup, teamname):
     heim_team = ""
     gast_team = ""
 
+    # 1. Klassische Transfermarkt-Struktur.
     heim_box = (
         soup.select_one(".sb-team.sb-heim a.sb-club__link")
         or soup.select_one(".sb-team.sb-heim a")
@@ -99,7 +100,9 @@ def _extract_team_names(soup, teamname):
     if gast_box:
         gast_team = gast_box.get_text(" ", strip=True)
 
+    # 2. Neuer/alternativer Matchbericht: H1, Title oder og:title.
     titel_quellen = []
+
     h1 = soup.select_one("h1")
     if h1:
         titel_quellen.append(h1.get_text(" ", strip=True))
@@ -107,64 +110,119 @@ def _extract_team_names(soup, teamname):
     if soup.title:
         titel_quellen.append(soup.title.get_text(" ", strip=True))
 
-    meta_title = soup.select_one('meta[property="og:title"]')
-    if meta_title and meta_title.get("content"):
-        titel_quellen.append(meta_title["content"].strip())
+    for selector in (
+        'meta[property="og:title"]',
+        'meta[name="twitter:title"]',
+    ):
+        meta = soup.select_one(selector)
+        if meta and meta.get("content"):
+            titel_quellen.append(meta["content"].strip())
 
     for titel_text in titel_quellen:
         if not titel_text:
             continue
 
-        match_paar = titel_text.split(",", 1)[0].strip()
-        if " - " not in match_paar:
-            continue
+        # Alles vor einem möglichen Suffix abschneiden.
+        kandidaten = [
+            titel_text,
+            titel_text.split("|", 1)[0].strip(),
+            titel_text.split(",", 1)[0].strip(),
+        ]
 
-        t1, t2 = [x.strip() for x in match_paar.split(" - ", 1)]
-        if t1 and t2 and (_team_match(teamname, t1) or _team_match(teamname, t2)):
-            heim_team = t1
-            gast_team = t2
+        for match_paar in kandidaten:
+            # Normaler Fall: "FC Zürich - FC Luzern"
+            m = re.search(
+                r"^\s*(.+?)\s+-\s+(.+?)(?:\s*\||\s*,\s*|$)",
+                match_paar,
+            )
+            if not m:
+                continue
+
+            t1 = m.group(1).strip()
+            t2 = m.group(2).strip()
+
+            if (
+                t1
+                and t2
+                and not _team_match(t1, t2)
+                and (_team_match(teamname, t1) or _team_match(teamname, t2))
+            ):
+                heim_team = t1
+                gast_team = t2
+                break
+
+        if heim_team and gast_team:
             break
 
+    # 3. Teamlinks als weitere robuste Fallback-Quelle.
     if not heim_team or not gast_team:
         team_links = []
-        for a in soup.select('a[href*="/startseite/verein/"]'):
-            text = a.get_text(" ", strip=True)
-            if text and text not in team_links:
-                team_links.append(text)
 
-        if team_links:
-            own_index = None
-            for i, text in enumerate(team_links):
-                if _team_match(teamname, text):
-                    own_index = i
-                    break
+        for a in soup.select("a"):
+            text_value = a.get_text(" ", strip=True)
+            if not text_value:
+                continue
 
-            if own_index is not None:
-                for i, text in enumerate(team_links):
-                    if i == own_index or _team_match(teamname, text):
-                        continue
+            href = a.get("href", "")
 
-                    heim_team = text if own_index > i else team_links[own_index]
-                    gast_team = team_links[own_index] if own_index > i else text
-                    break
+            # Transfermarkt-Teamlinks können sich ändern. Deshalb sowohl
+            # /startseite/verein/ als auch /verein/... akzeptieren.
+            is_team_link = (
+                "/startseite/verein/" in href
+                or "/verein/" in href
+            )
+
+            if is_team_link and text_value not in team_links:
+                team_links.append(text_value)
+
+        own_index = None
+        for i, value in enumerate(team_links):
+            if _team_match(teamname, value):
+                own_index = i
+                break
+
+        if own_index is not None:
+            for i, value in enumerate(team_links):
+                if i == own_index:
+                    continue
+                if _team_match(teamname, value):
+                    continue
+
+                if own_index < i:
+                    heim_team = team_links[own_index]
+                    gast_team = value
+                else:
+                    heim_team = value
+                    gast_team = team_links[own_index]
+                break
 
     if not heim_team or not gast_team:
-        raise ValueError("Transfermarkt: Heim- und Gastteam konnten nicht eindeutig gefunden werden.")
+        raise ValueError(
+            "Transfermarkt: Heim- und Gastteam konnten nicht eindeutig "
+            "gefunden werden."
+        )
 
     if _team_match(heim_team, gast_team):
-        raise ValueError("Transfermarkt: Heimteam und Gastteam sind identisch.")
+        raise ValueError(
+            "Transfermarkt: Heimteam und Gastteam sind identisch."
+        )
 
     heim_match = _team_match(teamname, heim_team)
     gast_match = _team_match(teamname, gast_team)
 
     if heim_match and gast_match:
-        raise ValueError(f"Transfermarkt: '{teamname}' passt gleichzeitig auf Heim- und Gastteam.")
+        raise ValueError(
+            f"Transfermarkt: '{teamname}' passt gleichzeitig auf "
+            "Heim- und Gastteam."
+        )
 
     if not heim_match and not gast_match:
-        raise ValueError(f"Transfermarkt: '{teamname}' wurde nicht eindeutig gefunden.\nHeim: {heim_team}\nGast: {gast_team}")
+        raise ValueError(
+            f"Transfermarkt: '{teamname}' wurde nicht eindeutig gefunden.\n"
+            f"Heim: {heim_team}\nGast: {gast_team}"
+        )
 
     return heim_team, gast_team, heim_match
-
 
 def _extract_score(soup):
     raw_resultat = ""
@@ -472,45 +530,107 @@ def _is_schedule_url(url):
 
 
 def _load_page_html(url):
-    """Lädt eine Transfermarkt-Seite mit Playwright und liefert HTML."""
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
+    """
+    Lädt eine Transfermarkt-Seite mit Playwright.
 
-        try:
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1920, "height": 1080},
-                locale="de-CH",
+    Bei einem Spielbericht wird zusätzlich die bekannte CloudFront-Kopie
+    versucht. Das ist wichtig, weil Transfermarkt den direkten
+    transfermarkt.ch-Spielbericht teilweise mit einer anderen HTML-Seite
+    ausliefert.
+    """
+    urls = [url]
+
+    if "/spielbericht/" in (url or ""):
+        m = re.search(r"/spielbericht/(?:index/)?spielbericht/(\d+)", url)
+        if m:
+            match_id = m.group(1)
+            urls.append(
+                f"https://d11fm7ft5vvlxu.cloudfront.net/"
+                f"spielbericht/index/spielbericht/{match_id}"
             )
 
-            page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    last_error = None
 
-            try:
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass
+    for target_url in urls:
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-blink-features=AutomationControlled",
+                    ],
+                )
 
-            html = page.content()
-            context.close()
-            return html
+                try:
+                    context = browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        viewport={"width": 1920, "height": 1080},
+                        locale="de-CH",
+                    )
 
-        finally:
-            browser.close()
+                    page = context.new_page()
+                    response = page.goto(
+                        target_url,
+                        wait_until="domcontentloaded",
+                        timeout=30000,
+                    )
 
+                    try:
+                        page.wait_for_load_state(
+                            "networkidle",
+                            timeout=10000,
+                        )
+                    except Exception:
+                        pass
+
+                    html = page.content()
+
+                    # Eine echte Matchseite muss entweder die beiden
+                    # Teamnamen oder einen Spielbericht-Titel enthalten.
+                    soup = BeautifulSoup(html, "html.parser")
+                    visible_text = soup.get_text(" ", strip=True)
+
+                    looks_like_match_page = (
+                        "Spielbericht" in visible_text
+                        or bool(soup.select_one("h1"))
+                        or bool(
+                            re.search(
+                                r"\b[A-Za-zÄÖÜäöüÉéÈèÀàÇçß0-9 .'-]+\s+-\s+"
+                                r"[A-Za-zÄÖÜäöüÉéÈèÀàÇçß0-9 .'-]+",
+                                visible_text,
+                            )
+                        )
+                    )
+
+                    # HTTP 403/Challenge-Seiten oder leere Antworten nicht
+                    # als erfolgreiche Matchseite akzeptieren.
+                    status = response.status if response else None
+                    if status == 403 or not looks_like_match_page:
+                        raise ValueError(
+                            f"Transfermarkt-Seite nicht verwertbar "
+                            f"(HTTP {status})."
+                        )
+
+                    context.close()
+                    return html
+
+                finally:
+                    browser.close()
+
+        except Exception as e:
+            last_error = e
+
+    raise ValueError(
+        f"Transfermarkt-Seite konnte nicht geladen werden: {last_error}"
+    )
 
 def _find_latest_match_report_url(soup, teamname):
     """
