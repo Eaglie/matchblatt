@@ -1,304 +1,532 @@
-from pathlib import Path
-import html
-
-CSS = r'''<style>
-*{box-sizing:border-box;}
-body{margin:0;padding:0;background:white;font-family:Arial,Helvetica,sans-serif;}
-.page{width:210mm;min-height:297mm;margin:10mm auto;background:white;padding:10mm 15mm;box-shadow:0 0 15px rgba(0,0,0,.15);}
-.header{background:#0b2f6b;color:white;display:flex;justify-content:center;align-items:center;padding:5px 20px;border:1px solid #0b2f6b;border-radius:10px 10px 0 0;overflow:hidden;}
-.title{text-align:center;}
-.title h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.5px;color:#fff;text-transform:uppercase;}
-.title h2{margin:8px 0 0;font-size:13px;font-weight:400;color:rgba(255,255,255,.78);}
-.header_label{color:#fff;font-weight:600;}
-.header_value{color:#fff;text-transform:uppercase;}
-.info{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:13px;}
-.info td{border:1px solid #d7d7d7;padding:8px 12px;}
-.info td:first-child{width:200px;background:#f3f3f3;font-weight:bold;}
-.absence{width:100%;border-collapse:collapse;margin:0;font-size:15px;}
-.absence td{border:1px solid #d9dee5;padding:6px 10px;height:30px;font-size:11px;font-weight:700;line-height:1.25;color:#111;vertical-align:top;}
-.absence td:first-child{width:105px;background:#fafbfc;color:#555;font-size:13px;font-weight:600;}
-.team{margin-top:12px;border:1px solid #dfe5ec;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);}
-.team_head{display:flex;align-items:center;width:100%;background:#17233f;border-radius:10px 10px 0 0;overflow:hidden;margin-bottom:0;white-space:nowrap;font-family:Arial,Helvetica,sans-serif;}
-.team_name{flex:1;background:#17233f;color:#fff;padding:10px 16px;font-size:18px;font-weight:700;text-align:left;}
-.team_opponent{background:#17233f;color:rgba(255,255,255,.85);padding:10px 16px;font-size:16px;font-weight:400;text-align:right;margin-left:auto;}
-.team_body{display:grid;grid-template-columns:380px 1fr;gap:28px;padding:6px 18px 4px 18px;align-items:start;}
-.pitch{position:relative;width:380px;height:380px;border:1px solid #d7dfe8;border-radius:8px;background:#fff;overflow:hidden;transform:translate(20px,10px);}
-.midline{position:absolute;left:0;right:0;top:50%;border-top:2px solid rgba(255,255,255,.85);}
-.centerdot{position:absolute;width:6px;height:6px;background:#fff;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
-.centercircle{position:absolute;width:74px;height:74px;border:1.5px solid #444;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);}
-.penalty_top{position:absolute;left:20%;width:60%;height:44px;top:0;border:1.5px solid #444;border-top:none;}
-.penalty_bottom{position:absolute;left:20%;width:60%;height:44px;bottom:0;border:1.5px solid #444;border-bottom:none;}
-.goalbox_top{position:absolute;left:35%;width:30%;height:16px;top:0;border:1.5px solid #444;border-top:none;}
-.goalbox_bottom{position:absolute;left:35%;width:30%;height:16px;bottom:0;border:1.5px solid #444;border-bottom:none;}
-.penalty_dot_top{position:absolute;width:3px;height:3px;background:#222;border-radius:50%;left:50%;top:32px;transform:translateX(-50%);}
-.penalty_dot_bottom{position:absolute;width:3px;height:3px;background:#222;border-radius:50%;left:50%;bottom:32px;transform:translateX(-50%);}
-.corner_top_left{position:absolute;top:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
-.corner_top_right{position:absolute;top:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
-.corner_bottom_left{position:absolute;bottom:-8px;left:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
-.corner_bottom_right{position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;border:1.5px solid #444;border-radius:50%;}
-.player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2;}
-.player_circle{
-    width:36px;
-    height:36px;
-    margin:auto;
-    border-radius:50%;
-    background:#111;
-    color:white;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:15px;
-    font-weight:bold;
-    border:2px solid white;
-    box-shadow:0 3px 8px rgba(0,0,0,.25);
-}
-.player_name{margin-top:2px;padding:0;font-size:11px;font-weight:700;line-height:1.1;color:#111;text-align:center;white-space:nowrap;}
-.player_position{display:none;}
-html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-</style>'''
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import re
+import unicodedata
+from datetime import datetime
+import requests
+from urllib.parse import quote
+import time
 
 
-def parse_val(val):
-    if val is None:
-        return None
-    if isinstance(val, (int, float)):
-        return float(val)
-    if isinstance(val, str):
-        cleaned = "".join(c for c in val if c.isdigit() or c in ".-")
-        if cleaned:
+def _normalize_team(name):
+    if not name:
+        return ""
+
+    name = unicodedata.normalize(
+        "NFKD",
+        name
+    ).encode(
+        "ascii",
+        "ignore"
+    ).decode(
+        "ascii"
+    )
+
+    name = name.lower()
+
+    name = re.sub(
+        r"[^a-z0-9]",
+        "",
+        name
+    )
+
+    name = re.sub(
+        r"(18|19|20)\d{2}$",
+        "",
+        name
+    )
+
+    return name
+
+
+def _team_match(
+    input_team,
+    page_team
+):
+    a = _normalize_team(input_team)
+    b = _normalize_team(page_team)
+
+    if not a or not b:
+        return False
+
+    if a == b:
+        return True
+
+    aliases = {
+        "grasshopperclubzurich": {"grasshoppers", "grasshopper"},
+        "grasshoppers": {"grasshopperclubzurich", "grasshopper"},
+        "grasshopper": {"grasshopperclubzurich", "grasshoppers"},
+        "fcstgallen": {"fcstgallen1879", "stgallen"},
+        "fcstgallen1879": {"fcstgallen", "stgallen"},
+        "stgallen": {"fcstgallen", "fcstgallen1879"},
+    }
+
+    if b in aliases.get(a, set()) or a in aliases.get(b, set()):
+        return True
+
+    prefixes = ("fc", "ac", "sc", "bc")
+    aa = a
+    bb = b
+
+    for prefix in prefixes:
+        if aa.startswith(prefix):
+            aa = aa[len(prefix):]
+        if bb.startswith(prefix):
+            bb = bb[len(prefix):]
+
+    return bool(aa) and bool(bb) and aa == bb
+
+
+def _extract_team_names(soup, teamname):
+    heim_team = ""
+    gast_team = ""
+
+    heim_box = (
+        soup.select_one(".sb-team.sb-heim a.sb-club__link")
+        or soup.select_one(".sb-team.sb-heim a")
+        or soup.select_one(".sb-heim a")
+    )
+
+    gast_box = (
+        soup.select_one(".sb-team.sb-gast a.sb-club__link")
+        or soup.select_one(".sb-team.sb-gast a")
+        or soup.select_one(".sb-gast a")
+    )
+
+    if heim_box:
+        heim_team = heim_box.get_text(" ", strip=True)
+
+    if gast_box:
+        gast_team = gast_box.get_text(" ", strip=True)
+
+    titel_quellen = []
+    h1 = soup.select_one("h1")
+    if h1:
+        titel_quellen.append(h1.get_text(" ", strip=True))
+
+    if soup.title:
+        titel_quellen.append(soup.title.get_text(" ", strip=True))
+
+    meta_title = soup.select_one('meta[property="og:title"]')
+    if meta_title and meta_title.get("content"):
+        titel_quellen.append(meta_title["content"].strip())
+
+    for titel_text in titel_quellen:
+        if not titel_text:
+            continue
+
+        match_paar = titel_text.split(",", 1)[0].strip()
+        if " - " not in match_paar:
+            continue
+
+        t1, t2 = [x.strip() for x in match_paar.split(" - ", 1)]
+        if t1 and t2 and (_team_match(teamname, t1) or _team_match(teamname, t2)):
+            heim_team = t1
+            gast_team = t2
+            break
+
+    if not heim_team or not gast_team:
+        team_links = []
+        for a in soup.select('a[href*="/startseite/verein/"]'):
+            text = a.get_text(" ", strip=True)
+            if text and text not in team_links:
+                team_links.append(text)
+
+        if team_links:
+            own_index = None
+            for i, text in enumerate(team_links):
+                if _team_match(teamname, text):
+                    own_index = i
+                    break
+
+            if own_index is not None:
+                for i, text in enumerate(team_links):
+                    if i == own_index or _team_match(teamname, text):
+                        continue
+
+                    heim_team = text if own_index > i else team_links[own_index]
+                    gast_team = team_links[own_index] if own_index > i else text
+                    break
+
+    if not heim_team or not gast_team:
+        raise ValueError("Transfermarkt: Heim- und Gastteam konnten nicht eindeutig gefunden werden.")
+
+    if _team_match(heim_team, gast_team):
+        raise ValueError("Transfermarkt: Heimteam und Gastteam sind identisch.")
+
+    heim_match = _team_match(teamname, heim_team)
+    gast_match = _team_match(teamname, gast_team)
+
+    if heim_match and gast_match:
+        raise ValueError(f"Transfermarkt: '{teamname}' passt gleichzeitig auf Heim- und Gastteam.")
+
+    if not heim_match and not gast_match:
+        raise ValueError(f"Transfermarkt: '{teamname}' wurde nicht eindeutig gefunden.\nHeim: {heim_team}\nGast: {gast_team}")
+
+    return heim_team, gast_team, heim_match
+
+
+def _extract_score(soup):
+    raw_resultat = ""
+    score_box = soup.select_one(".sb-core-info")
+
+    if score_box:
+        for txt in score_box.stripped_strings:
+            if re.fullmatch(r"\d+:\d+", txt):
+                a, b = map(int, txt.split(":"))
+                if a <= 20 and b <= 20:
+                    raw_resultat = txt
+                    break
+
+    if not raw_resultat:
+        for txt in soup.stripped_strings:
+            if re.fullmatch(r"\d+:\d+", txt):
+                a, b = map(int, txt.split(":"))
+                if a <= 10 and b <= 10:
+                    raw_resultat = txt
+                    break
+
+    if not raw_resultat:
+        raise ValueError("Transfermarkt: Endresultat konnte nicht eindeutig gefunden werden.")
+
+    return tuple(map(int, raw_resultat.split(":")))
+
+
+def _extract_formation(soup):
+    text = soup.get_text("\n")
+    match = re.search(r"Startaufstellung:\s*([0-9\- ]+)", text)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_players(soup, is_heim, teamname):
+    containers = soup.select(
+        "div.sb-aufstellung-heim div.formation-player-container" if is_heim
+        else "div.sb-aufstellung-gast div.formation-player-container"
+    )
+
+    if not containers:
+        containers = soup.select("div.formation-player-container")
+        if len(containers) >= 22:
+            containers = containers[:11] if is_heim else containers[11:22]
+        else:
+            raise ValueError(f"Transfermarkt: Die Startaufstellung von '{teamname}' konnte nicht gefunden werden.")
+
+    spieler = []
+    for div in containers:
+        style = div.get("style", "")
+        top = re.search(r"top:\s*([\d.]+)%", style)
+        left = re.search(r"left:\s*([\d.]+)%", style)
+        nummer = div.select_one(".tm-shirt-number")
+        name = div.select_one(".formation-number-name")
+
+        if not top or not left or not nummer or not name:
+            continue
+
+        spieler.append({
+            "nummer": nummer.get_text(strip=True),
+            "name": name.get_text(" ", strip=True),
+            "x": float(left.group(1)),
+            "y": float(top.group(1)),
+        })
+
+    eindeutig = []
+    gesehen = set()
+    for s in spieler:
+        key = (s["name"], s["x"], s["y"])
+        if key not in gesehen:
+            gesehen.add(key)
+            eindeutig.append(s)
+
+    if len(eindeutig) != 11:
+        raise ValueError(f"Transfermarkt: Für '{teamname}' wurden nicht exakt 11 Startspieler gefunden (gefunden: {len(eindeutig)}).")
+
+    return eindeutig
+
+
+# ---------------------------------------------------------
+# TRANSFERMARKT JSON-API
+# ---------------------------------------------------------
+
+_TM_API_BASE = "https://transfermarkt-api.fly.dev"
+_TM_LAST_API_CALL = 0.0
+
+
+def _tm_api_wait():
+    global _TM_LAST_API_CALL
+    now = time.monotonic()
+    wait = 1.65 - (now - _TM_LAST_API_CALL)
+    if wait > 0:
+        time.sleep(wait)
+    _TM_LAST_API_CALL = time.monotonic()
+
+
+def _tm_api_get(path, timeout=20):
+    max_attempts = 3
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        _tm_api_wait()
+        try:
+            response = requests.get(
+                _TM_API_BASE + path,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "application/json",
+                },
+            )
+        except requests.RequestException:
+            last_error = "Transfermarkt-API konnte nicht erreicht werden."
+            if attempt < max_attempts:
+                time.sleep(1.0)
+                continue
+            return None, last_error
+
+        if response.status_code == 200:
             try:
-                return float(cleaned)
+                return response.json(), None
             except ValueError:
-                return None
+                return None, "Transfermarkt-API hat kein gültiges JSON geliefert."
+
+        last_error = f"Transfermarkt-API HTTP {response.status_code}."
+        if response.status_code not in (502, 503, 504) or attempt >= max_attempts:
+            return None, last_error
+
+        time.sleep(1.0)
+
+    return None, last_error or "Transfermarkt-API fehlgeschlagen."
+
+
+def _tm_team_from_side(side):
+    if not isinstance(side, dict):
+        return "", None
+    name = side.get("name") or ""
+    team_id = side.get("id")
+    return str(name).strip(), str(team_id) if team_id is not None else None
+
+
+def _tm_player_value(player, *keys):
+    if not isinstance(player, dict):
+        return None
+    for key in keys:
+        value = player.get(key)
+        if value not in (None, ""):
+            return value
     return None
 
 
-def adjust_left(val):
-    return val
+def _tm_make_coordinates(players, formation, is_home):
+    has_real_coordinates = True
 
+    for player in players:
+        if not isinstance(player, dict):
+            has_real_coordinates = False
+            break
 
-def adjust_top(val):
-    return val
+        left = _tm_player_value(player, "styleLeft", "style_left", "left", "x")
+        top = _tm_player_value(player, "styleTop", "style_top", "top", "y")
 
-
-def draw_players(spieler):
-    html_parts = []
-
-    # DIE GESAMTE MANNSCHAFT wird als eine Einheit verschoben:
-    # Torhüter + 10 Feldspieler. Relative Abstände bleiben exakt gleich.
-    positions = []
-    for i, p in enumerate(spieler or []):
-        if not isinstance(p, dict):
-            continue
         try:
-            x = float(p.get("left", p.get("x", 50)))
-            y = float(p.get("top", p.get("y", 50)))
+            if left is None or top is None:
+                raise ValueError
+            float(left)
+            float(top)
         except (TypeError, ValueError):
+            has_real_coordinates = False
+            break
+
+    if has_real_coordinates:
+        result = []
+        for player in players:
+            name = _tm_player_value(player, "name", "playerName", "fullName")
+            number = _tm_player_value(player, "shirtNumber", "shirt_number", "number", "jerseyNumber")
+            left = float(_tm_player_value(player, "styleLeft", "style_left", "left", "x"))
+            top = float(_tm_player_value(player, "styleTop", "style_top", "top", "y"))
+
+            if name:
+                result.append({
+                    "nummer": str(number) if number is not None else "",
+                    "name": str(name).strip(),
+                    "x": left,
+                    "y": top,
+                })
+        return result
+
+    nums = [int(x) for x in re.findall(r"\d+", formation or "")]
+    if sum(nums) != 10:
+        nums = [4, 3, 3]
+
+    rows = [1] + nums
+    if sum(rows) != len(players):
+        rows = [1, len(players) - 1]
+
+    y_values = [88.0, 70.0, 50.0, 31.0, 16.0]
+    result = []
+    index = 0
+    for row_index, count in enumerate(rows):
+        if count <= 0:
             continue
-        positions.append((i, x, y))
+        y = y_values[min(row_index, len(y_values) - 1)]
+        for j in range(count):
+            if index >= len(players):
+                break
+            x = 50.0 if count == 1 else 12.0 + (76.0 * j / (count - 1))
+            player = players[index]
+            name = _tm_player_value(player, "name", "playerName", "fullName")
+            number = _tm_player_value(player, "shirtNumber", "shirt_number", "number", "jerseyNumber")
+            if name:
+                result.append({
+                    "nummer": str(number) if number is not None else "",
+                    "name": str(name).strip(),
+                    "x": x,
+                    "y": y if is_home else 100.0 - y,
+                })
+            index += 1
 
-    if positions:
-        team_center_x = sum(x for _, x, _ in positions) / len(positions)
-        team_center_y = sum(y for _, _, y in positions) / len(positions)
+    return result
 
-        # Ein gemeinsamer Offset für ALLE Spieler.
-        offset_x = 50.0 - team_center_x
-        offset_y = 50.0 - team_center_y
+
+def _lade_transfermarkt_api(url, teamname):
+    match = re.search(r"spielbericht/(?:index/)?spielbericht/(\d+)", url or "")
+    if not match:
+        match = re.search(r"spielbericht/(\d+)", url or "")
+    if not match:
+        return None
+
+    match_id = match.group(1)
+    root, error = _tm_api_get(f"/games/{match_id}")
+    if not isinstance(root, dict):
+        raise ValueError(error or "Transfermarkt-API liefert keine Spieldaten.")
+
+    home_side = root.get("home")
+    away_side = root.get("away")
+    if not isinstance(home_side, dict) or not isinstance(away_side, dict):
+        return None
+
+    home_team, home_id = _tm_team_from_side(home_side)
+    away_team, away_id = _tm_team_from_side(away_side)
+    if not home_team or not away_team:
+        return None
+
+    if _team_match(teamname, home_team):
+        is_home = True
+        own_side = home_side
+    elif _team_match(teamname, away_team):
+        is_home = False
+        own_side = away_side
     else:
-        offset_x = 0.0
-        offset_y = 0.0
+        raise ValueError(f"Transfermarkt-API: Team '{teamname}' passt nicht zu '{home_team}' oder '{away_team}'.")
 
-    valid_indices = {i for i, _, _ in positions}
+    home_goals = _tm_player_value(home_side, "score", "goals")
+    away_goals = _tm_player_value(away_side, "score", "goals")
+    if home_goals is None or away_goals is None:
+        score = root.get("score")
+        if isinstance(score, dict):
+            home_goals = score.get("home")
+            away_goals = score.get("away")
 
-    for i, p in enumerate(spieler or []):
-        if not isinstance(p, dict):
-            continue
+    if home_goals is None or away_goals is None:
+        raise ValueError("Transfermarkt-API: Heim-/Gasttore fehlen.")
 
-        nummer = p.get("nummer", p.get("number", ""))
-        name = p.get("name", p.get("spieler", ""))
-        left = p.get("left", p.get("x", 50))
-        top = p.get("top", p.get("y", 50))
+    own_goals, opp_goals = (
+        (int(home_goals), int(away_goals)) if is_home
+        else (int(away_goals), int(home_goals))
+    )
 
-        if i in valid_indices:
-            left = float(left) + offset_x
-            top = float(top) + offset_y
+    if own_goals > opp_goals:
+        ausgang = "Sieg"
+    elif own_goals < opp_goals:
+        ausgang = "Niederlage"
+    else:
+        ausgang = "Unentschieden"
 
-        html_parts.append(f"""
-<div class="player" style="left:{html.escape(str(left))}%;top:{html.escape(str(top))}%">
-    <div class="player_circle">{html.escape(str(nummer))}</div>
-    <div class="player_name">{html.escape(str(name))}</div>
-    <div class="player_position"></div>
-</div>""")
+    formation = own_side.get("formation") or ""
+    players = _tm_player_value(own_side, "startingLineup", "starting_lineup", "lineup", "players")
+    if not isinstance(players, list):
+        players = []
 
-    return "".join(html_parts)
+    koordinaten = _tm_make_coordinates(players, formation, is_home)
 
-
-def draw_pitch(spieler):
-    return f'''
-<div class="pitch">
-    <div class="midline"></div>
-    <div class="centerdot"></div>
-    <div class="centercircle"></div>
-    <div class="penalty_top"></div>
-    <div class="goalbox_top"></div>
-    <div class="penalty_bottom"></div>
-    <div class="goalbox_bottom"></div>
-    <div class="penalty_dot_top"></div>
-    <div class="penalty_dot_bottom"></div>
-    {draw_players(spieler)}
-</div>'''
-
-
-def absence_table_html(absences):
-    absences = absences or {}
-
-    def values(*keys):
-        found = []
-        for key in keys:
-            value = absences.get(key, [])
-            if isinstance(value, str):
-                if value.strip():
-                    found.append(value.strip())
-            elif isinstance(value, (list, tuple)):
-                found.extend(str(x) for x in value if str(x).strip())
-        return "<br>".join(html.escape(x) for x in found)
-
-    return f'''
-<table class="absence">
-<tr><td>Gesperrt</td><td>{values("gesperrt")}</td></tr>
-<tr><td>Verletzt</td><td>{values("verletzt")}</td></tr>
-<tr><td>Krank</td><td>{values("krank")}</td></tr>
-<tr><td>Fraglich</td><td>{values("fraglich")}</td></tr>
-<tr><td>Nicht im Aufgebot</td><td>{values("nicht_im_aufgebot", "nicht_im_kader", "nicht_im_aufgebot_namen")}</td></tr>
-</table>'''
-
-
-def team_block(teamname, daten, absenzen):
-    daten = daten or {}
-    raw_spieler = daten.get("spieler", [])
-    spieler = []
-
-    for s in raw_spieler:
-        if not isinstance(s, dict):
-            continue
-        spieler.append(s.copy())
-
-    letzter_gegner = daten.get("letzter_gegner", "")
-    resultat = daten.get("resultat", "")
-
-    last_game = f"Letztes Spiel: {teamname} {resultat} {letzter_gegner}".strip()
-
-    return f'''
-<div class="team">
-    <div class="team_head">
-        <span class="team_name">{html.escape(str(teamname))}</span>
-        <span class="team_opponent">{html.escape(last_game)}</span>
-    </div>
-    <div class="team_body">
-        <div style="display:flex; flex-direction:column;">
-            {draw_pitch(spieler)}
-        </div>
-        <div style="display:flex; flex-direction:column;">
-            {absence_table_html(absenzen)}
-        </div>
-    </div>
-</div>'''
-
-
-def erstelle_report(sfl, heim, gast):
-    sfl = sfl or {}
-    heim = heim or {}
-    gast = gast or {}
-
-    heim_name = sfl.get("heim", "")
-    gast_name = sfl.get("gast", "")
-
-    header = f'''
-<div class="header">
-    <div class="title">
-        <h1>{html.escape(str(heim_name)).upper()} – {html.escape(str(gast_name)).upper()}</h1>
-        <h2>
-            {html.escape(str(sfl.get("stadion", "")))}
-            • <span class="header_label">Schiedsrichter:</span>
-            <span class="header_value">{html.escape(str(sfl.get("schiedsrichter", ""))).upper()}</span>
-            • <span class="header_label">VAR:</span>
-            <span class="header_value">{html.escape(str(sfl.get("var", ""))).upper()}</span>
-        </h2>
-    </div>
-</div>'''
-
-    html_document = f'''<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<title>{html.escape(str(heim_name))} - {html.escape(str(gast_name))}</title>
-{CSS}
-</head>
-<body>
-<div class="page">
-{header}
-
-{team_block(
-    heim_name,
-    heim,
-    sfl.get("heim_abwesend", heim.get("absenzen", {}))
-)}
-
-<div style="height:2px;"></div>
-
-{team_block(
-    gast_name,
-    gast,
-    sfl.get("gast_abwesend", gast.get("absenzen", {}))
-)}
-</div>
-</body>
-</html>'''
-
-    Path("report.html").write_text(html_document, encoding="utf-8")
-    print("✓ report.html erstellt")
-
-
-def report_vorlage():
     return {
-        "heim": "",
-        "gast": "",
-        "liga": "",
-        "datum": "",
-        "zeit": "",
-        "stadion": "",
-        "schiedsrichter": "",
-        "var": "",
-        "runde": "",
-        "zuschauer": "",
+        "heim_team": home_team,
+        "gast_team": away_team,
+        "own_goals": own_goals,
+        "opp_goals": opp_goals,
+        "ausgang": ausgang,
+        "formation": formation,
+        "spieler": koordinaten,
+        "is_home": is_home,
     }
 
 
-def team_vorlage():
-    return {
-        "logo": "",
-        "formation": "",
-        "resultat": "",
-        "letzter_gegner": "",
-        "trainer": "",
-        "captain": "",
-        "tabellenplatz": "",
-        "form": "",
-        "tore": "",
-        "gegentore": "",
-        "xg": "",
-        "ballbesitz": "",
-        "spieler": [],
-        "ersatzbank": [],
-        "absenzen": {
-            "gesperrt": [],
-            "verletzt": [],
-            "krank": [],
-            "fraglich": [],
-            "nicht_im_aufgebot": [],
-        },
-    }
+def lade_transfermarkt(url, teamname):
+    """
+    Zentrale Einstiegsfunktion für Streamlit:
+    Versucht zuerst die JSON-API. Bei Fehlern folgt ein robusterer
+    Playwright-Fallback mit echtem Desktop-Chrome-User-Agent.
+    """
+    try:
+        api_data = _lade_transfermarkt_api(url, teamname)
+        if api_data:
+            return (
+                api_data["heim_team"], api_data["gast_team"],
+                api_data["own_goals"], api_data["opp_goals"],
+                api_data["ausgang"], api_data["formation"],
+                api_data["spieler"], api_data["is_home"]
+            )
+    except Exception as e:
+        print(f"API-Fehler (nutze Web-Scraping): {e}")
 
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        try:
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+            )
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            soup = BeautifulSoup(page.content(), "html.parser")
+            context.close()
+        finally:
+            browser.close()
 
-if __name__ == "__main__":
-    print("Dieses Modul wird von main.py aufgerufen.")
+    heim_team, gast_team, is_heim = _extract_team_names(soup, teamname)
+    score_tore = _extract_score(soup)
+    eigene_tore, fremde_tore = (
+        score_tore if is_heim else (score_tore[1], score_tore[0])
+    )
+
+    if eigene_tore > fremde_tore:
+        ausgang = "Sieg"
+    elif eigene_tore < fremde_tore:
+        ausgang = "Niederlage"
+    else:
+        ausgang = "Unentschieden"
+
+    formation = _extract_formation(soup)
+    spieler = _extract_players(soup, is_heim, teamname)
+
+    return (
+        heim_team, gast_team, eigene_tore, fremde_tore,
+        ausgang, formation, spieler, is_heim
+    )
